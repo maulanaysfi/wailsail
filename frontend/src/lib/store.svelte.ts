@@ -1,0 +1,221 @@
+import {
+  Kube,
+  Settings,
+  errorMessage,
+  type ContextInfo,
+  type ResourceRef,
+  type ResourceType,
+  type SettingsData,
+} from "./api";
+import { kindKey, resourceKey } from "./resources";
+
+export interface Selection {
+  type: ResourceType;
+  namespace: string;
+  name: string;
+}
+
+export type DockTab =
+  | { id: string; kind: "logs"; title: string; context: string; namespace: string; pod: string; container?: string }
+  | { id: string; kind: "shell"; title: string; context: string; namespace: string; pod: string; container?: string };
+
+export interface Toast {
+  id: number;
+  tone: "info" | "error" | "ok";
+  text: string;
+}
+
+interface ConfirmRequest {
+  title: string;
+  message: string;
+  danger: boolean;
+  resolve: (ok: boolean) => void;
+}
+
+const defaultSettings: SettingsData = {
+  theme: "system",
+  lastContext: "",
+  lastNamespace: {},
+  logTailLines: 500,
+  logTimestamps: false,
+  showWide: false,
+  pinned: [],
+};
+
+class AppState {
+  contexts = $state<ContextInfo[]>([]);
+  context = $state("");
+  serverVersion = $state("");
+  connectionError = $state("");
+  namespaces = $state<string[]>([]);
+  namespace = $state(""); // "" means all namespaces
+  resources = $state<ResourceType[]>([]);
+  resourcesLoading = $state(false);
+  current = $state<ResourceType | null>(null);
+  selection = $state<Selection | null>(null);
+  dock = $state<DockTab[]>([]);
+  activeDock = $state("");
+  dockOpen = $state(false);
+  settings = $state<SettingsData>({ ...defaultSettings });
+  toasts = $state<Toast[]>([]);
+  confirmRequest = $state<ConfirmRequest | null>(null);
+  showForwards = $state(false);
+  showApply = $state(false);
+  forwardTarget = $state<Selection | null>(null);
+  now = $state(Date.now());
+
+  #toastSeq = 0;
+
+  async init() {
+    setInterval(() => (this.now = Date.now()), 1000);
+    try {
+      this.settings = { ...defaultSettings, ...((await Settings.Get()) ?? {}) };
+    } catch (e) {
+      this.toast(`Could not read settings: ${errorMessage(e)}`, "error");
+    }
+    this.applyTheme();
+    await this.loadContexts();
+  }
+
+  async loadContexts() {
+    try {
+      this.contexts = (await Kube.Contexts()) ?? [];
+    } catch (e) {
+      this.contexts = [];
+      this.connectionError = `Could not load kubeconfig: ${errorMessage(e)}`;
+      return;
+    }
+    const names = this.contexts.map((c) => c.name);
+    let pick = this.settings.lastContext;
+    if (!names.includes(pick)) pick = this.contexts.find((c) => c.current)?.name ?? names[0] ?? "";
+    if (pick) await this.selectContext(pick);
+  }
+
+  async reload() {
+    await Kube.Reload();
+    const ctx = this.context;
+    this.context = "";
+    this.contexts = (await Kube.Contexts().catch(() => [])) ?? [];
+    if (ctx) await this.selectContext(ctx);
+  }
+
+  async selectContext(name: string) {
+    this.context = name;
+    this.selection = null;
+    this.current = null;
+    this.resources = [];
+    this.namespaces = [];
+    this.serverVersion = "";
+    this.connectionError = "";
+    this.saveSettings({ lastContext: name });
+
+    const saved = this.settings.lastNamespace?.[name];
+    if (saved !== undefined) {
+      this.namespace = saved;
+    } else {
+      this.namespace = (await Kube.DefaultNamespace(name).catch(() => "")) ?? "";
+    }
+
+    this.resourcesLoading = true;
+    try {
+      const [version, resources, namespaces] = await Promise.all([
+        Kube.ServerVersion(name),
+        Kube.APIResources(name),
+        Kube.Namespaces(name),
+      ]);
+      if (this.context !== name) return; // switched meanwhile
+      this.serverVersion = version;
+      this.resources = resources ?? [];
+      this.namespaces = namespaces ?? [];
+      const pods = this.resources.find((r) => kindKey(r) === "/Pod");
+      this.current = pods ?? this.resources[0] ?? null;
+    } catch (e) {
+      if (this.context === name) this.connectionError = errorMessage(e);
+    } finally {
+      if (this.context === name) this.resourcesLoading = false;
+    }
+  }
+
+  selectNamespace(ns: string) {
+    this.namespace = ns;
+    this.selection = null;
+    const map = { ...(this.settings.lastNamespace ?? {}), [this.context]: ns };
+    this.saveSettings({ lastNamespace: map });
+  }
+
+  selectResource(r: ResourceType) {
+    this.current = r;
+    this.selection = null;
+  }
+
+  isPinned(r: ResourceType) {
+    return (this.settings.pinned ?? []).includes(resourceKey(r));
+  }
+
+  togglePin(r: ResourceType) {
+    const k = resourceKey(r);
+    const pinned = this.settings.pinned ?? [];
+    this.saveSettings({ pinned: pinned.includes(k) ? pinned.filter((p) => p !== k) : [...pinned, k] });
+  }
+
+  saveSettings(patch: Partial<SettingsData>) {
+    this.settings = { ...this.settings, ...patch };
+    Settings.Save(this.settings).catch((e) => this.toast(`Could not save settings: ${errorMessage(e)}`, "error"));
+    if ("theme" in patch) this.applyTheme();
+  }
+
+  applyTheme() {
+    const t = this.settings.theme;
+    const dark = t === "dark" || (t !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  }
+
+  cycleTheme() {
+    const order = ["system", "light", "dark"];
+    const next = order[(order.indexOf(this.settings.theme) + 1) % order.length];
+    this.saveSettings({ theme: next });
+  }
+
+  openDock(tab: Omit<DockTab, "id">) {
+    const id = `${tab.kind}-${Date.now().toString(36)}`;
+    this.dock = [...this.dock, { ...tab, id } as DockTab];
+    this.activeDock = id;
+    this.dockOpen = true;
+  }
+
+  closeDock(id: string) {
+    const idx = this.dock.findIndex((t) => t.id === id);
+    this.dock = this.dock.filter((t) => t.id !== id);
+    if (this.activeDock === id) {
+      this.activeDock = this.dock[Math.max(0, idx - 1)]?.id ?? "";
+    }
+    if (this.dock.length === 0) this.dockOpen = false;
+  }
+
+  toast(text: string, tone: Toast["tone"] = "info") {
+    const id = ++this.#toastSeq;
+    this.toasts = [...this.toasts, { id, tone, text }];
+    setTimeout(() => this.dismissToast(id), tone === "error" ? 8000 : 3500);
+  }
+
+  dismissToast(id: number) {
+    this.toasts = this.toasts.filter((t) => t.id !== id);
+  }
+
+  confirm(title: string, message: string, danger = false): Promise<boolean> {
+    return new Promise((resolve) => {
+      this.confirmRequest = { title, message, danger, resolve };
+    });
+  }
+
+  answerConfirm(ok: boolean) {
+    this.confirmRequest?.resolve(ok);
+    this.confirmRequest = null;
+  }
+}
+
+export const app = new AppState();
+
+export function refOf(r: ResourceType): ResourceRef {
+  return { group: r.group, version: r.version, resource: r.resource, kind: r.kind, namespaced: r.namespaced };
+}
