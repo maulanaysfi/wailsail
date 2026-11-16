@@ -9,11 +9,13 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
@@ -241,6 +243,145 @@ func ObjectToYAML(obj *unstructured.Unstructured) (string, error) {
 		return "", err
 	}
 	return string(b), nil
+}
+
+// EventInfo describes a Kubernetes Event related to a selected object.
+type EventInfo struct {
+	Type      string `json:"type"`      // "Normal" or "Warning"
+	Reason    string `json:"reason"`    // short machine-readable reason
+	Message   string `json:"message"`   // human-readable description
+	Count     int32  `json:"count"`     // occurrence count
+	Source    string `json:"source"`    // reporting component / controller
+	SubObject string `json:"subObject"` // involvedObject.fieldPath if set
+	FirstSeen string `json:"firstSeen"` // RFC3339 timestamp
+	LastSeen  string `json:"lastSeen"`  // RFC3339 timestamp
+}
+
+// ObjectDetail bundles the structured object, its YAML representation, and
+// related Kubernetes events for the detail drawer.
+type ObjectDetail struct {
+	Object map[string]any `json:"object"`
+	YAML   string         `json:"yaml"`
+	Events []EventInfo    `json:"events"`
+}
+
+// GetDetail fetches a resource's structured representation, YAML (without
+// managedFields), and related cluster events.
+func (s *Service) GetDetail(contextName string, ref ResourceRef, namespace, name string) (ObjectDetail, error) {
+	c, err := s.mgr.For(contextName)
+	if err != nil {
+		return ObjectDetail{}, err
+	}
+	obj, err := s.resourceClient(c, ref, namespace).Get(s.baseCtx, name, metav1.GetOptions{})
+	if err != nil {
+		return ObjectDetail{}, err
+	}
+	clean := obj.DeepCopy()
+	unstructured.RemoveNestedField(clean.Object, "metadata", "managedFields")
+	b, err := yaml.Marshal(clean.Object)
+	if err != nil {
+		return ObjectDetail{}, err
+	}
+	evs, _ := s.listObjectEvents(c, ref.Kind, namespace, name, string(obj.GetUID()))
+	return ObjectDetail{
+		Object: clean.Object,
+		YAML:   string(b),
+		Events: evs,
+	}, nil
+}
+
+// ObjectEvents returns Kubernetes events involving the specified object.
+func (s *Service) ObjectEvents(contextName, kind, namespace, name string) ([]EventInfo, error) {
+	c, err := s.mgr.For(contextName)
+	if err != nil {
+		return nil, err
+	}
+	return s.listObjectEvents(c, kind, namespace, name, "")
+}
+
+func (s *Service) listObjectEvents(c *Clients, kind, namespace, name, uid string) ([]EventInfo, error) {
+	sel := fields.OneTermEqualSelector("involvedObject.name", name).String()
+	list, err := c.Typed.CoreV1().Events(namespace).List(s.baseCtx, metav1.ListOptions{FieldSelector: sel})
+	if err != nil {
+		return []EventInfo{}, err
+	}
+	return filterAndSortEvents(list.Items, kind, namespace, name, uid), nil
+}
+
+func filterAndSortEvents(items []corev1.Event, kind, namespace, name, uid string) []EventInfo {
+	out := make([]EventInfo, 0, len(items))
+	for _, ev := range items {
+		inv := ev.InvolvedObject
+		if inv.Name != name {
+			continue
+		}
+		if namespace != "" && inv.Namespace != "" && inv.Namespace != namespace {
+			continue
+		}
+		if kind != "" && inv.Kind != "" && !strings.EqualFold(inv.Kind, kind) {
+			continue
+		}
+		if uid != "" && string(inv.UID) != "" && string(inv.UID) != uid {
+			continue
+		}
+		src := ev.Source.Component
+		if src == "" {
+			src = ev.ReportingController
+		}
+		if ev.Source.Host != "" {
+			if src != "" {
+				src += " (" + ev.Source.Host + ")"
+			} else {
+				src = ev.Source.Host
+			}
+		}
+		count := ev.Count
+		if ev.Series != nil && ev.Series.Count > count {
+			count = ev.Series.Count
+		}
+		if count == 0 {
+			count = 1
+		}
+		first := eventTimestamp(ev.FirstTimestamp, ev.EventTime, ev.CreationTimestamp)
+		last := eventLastTimestamp(ev)
+		out = append(out, EventInfo{
+			Type:      ev.Type,
+			Reason:    ev.Reason,
+			Message:   ev.Message,
+			Count:     count,
+			Source:    src,
+			SubObject: inv.FieldPath,
+			FirstSeen: first,
+			LastSeen:  last,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].LastSeen != out[j].LastSeen {
+			return out[i].LastSeen > out[j].LastSeen
+		}
+		return out[i].Reason < out[j].Reason
+	})
+	return out
+}
+
+func eventTimestamp(t metav1.Time, micro metav1.MicroTime, fallback metav1.Time) string {
+	if !t.IsZero() {
+		return t.UTC().Format(time.RFC3339)
+	}
+	if !micro.IsZero() {
+		return micro.UTC().Format(time.RFC3339)
+	}
+	if !fallback.IsZero() {
+		return fallback.UTC().Format(time.RFC3339)
+	}
+	return ""
+}
+
+func eventLastTimestamp(ev corev1.Event) string {
+	if ev.Series != nil && !ev.Series.LastObservedTime.IsZero() {
+		return ev.Series.LastObservedTime.UTC().Format(time.RFC3339)
+	}
+	return eventTimestamp(ev.LastTimestamp, ev.EventTime, ev.CreationTimestamp)
 }
 
 // ApplyResult describes one object touched by Apply.

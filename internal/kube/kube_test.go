@@ -2,6 +2,11 @@ package kube
 
 import (
 	"testing"
+	"time"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 const podTable = `{
@@ -120,5 +125,47 @@ items:
 	}
 	if _, err := DecodeManifest("kind: ConfigMap\nmetadata: {name: x}\n"); err == nil {
 		t.Fatal("expected missing apiVersion error")
+	}
+}
+
+func TestFilterAndSortEvents(t *testing.T) {
+	t1 := metav1.NewTime(time.Date(2026, 11, 16, 10, 0, 0, 0, time.UTC))
+	t2 := metav1.NewTime(time.Date(2026, 11, 16, 10, 5, 0, 0, time.UTC))
+	items := []corev1.Event{
+		{
+			InvolvedObject: corev1.ObjectReference{Kind: "Pod", Namespace: "prod", Name: "web-1", UID: types.UID("u-1")},
+			Type:           "Normal",
+			Reason:         "Scheduled",
+			Message:        "Successfully assigned prod/web-1 to node-1",
+			Source:         corev1.EventSource{Component: "default-scheduler"},
+			LastTimestamp:  t1,
+		},
+		{
+			InvolvedObject: corev1.ObjectReference{Kind: "Pod", Namespace: "prod", Name: "web-1", UID: types.UID("u-1"), FieldPath: "spec.containers{app}"},
+			Type:           "Warning",
+			Reason:         "BackOff",
+			Message:        "Back-off restarting failed container",
+			Count:          4,
+			Source:         corev1.EventSource{Component: "kubelet", Host: "node-1"},
+			LastTimestamp:  t2,
+		},
+		{
+			// Different Kind with same name should be excluded.
+			InvolvedObject: corev1.ObjectReference{Kind: "Service", Namespace: "prod", Name: "web-1", UID: types.UID("u-2")},
+			Type:           "Normal",
+			Reason:         "Updated",
+			LastTimestamp:  t2,
+		},
+	}
+
+	got := filterAndSortEvents(items, "Pod", "prod", "web-1", "u-1")
+	if len(got) != 2 {
+		t.Fatalf("expected 2 events, got %+v", got)
+	}
+	if got[0].Reason != "BackOff" || got[0].Count != 4 || got[0].Source != "kubelet (node-1)" {
+		t.Fatalf("newest event should be first: %+v", got[0])
+	}
+	if got[1].Reason != "Scheduled" || got[1].Count != 1 {
+		t.Fatalf("second event: %+v", got[1])
 	}
 }

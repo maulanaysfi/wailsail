@@ -83,6 +83,8 @@ flowchart LR
   - `APIResources(contextName string) ([]ResourceType, error)`
   - `Watch(contextName string, ref ResourceRef, namespace, streamID string) (string, error)` — requests `meta.k8s.io/v1` `Table` rows, coalesces updates every 150ms, relists on `410 Gone`, emits `WatchEvent` (`reset`, `columns`, `upserts`, `deletes`, `error`)
   - `StopWatch(streamID string)`
+  - `GetDetail(contextName string, ref ResourceRef, namespace, name string) (ObjectDetail, error)` — returns structured object, YAML without `managedFields`, and related Kubernetes events
+  - `ObjectEvents(contextName, kind, namespace, name string) ([]EventInfo, error)`
   - `GetYAML(contextName string, ref ResourceRef, namespace, name string) (string, error)`
   - `Apply(contextName, manifest, defaultNamespace string) ([]ApplyResult, error)` — multi-document YAML/JSON + `List` expansion via Server-Side Apply (`fieldManager: "wailsail"`)
   - `Delete(contextName string, ref ResourceRef, namespace, name string) error`

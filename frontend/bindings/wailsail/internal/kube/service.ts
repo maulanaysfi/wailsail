@@ -53,6 +53,14 @@ export function Delete(contextName: string, ref: $models.ResourceRef, $namespace
 }
 
 /**
+ * GetDetail fetches a resource's structured representation, YAML (without
+ * managedFields), and related cluster events.
+ */
+export function GetDetail(contextName: string, ref: $models.ResourceRef, $namespace: string, name: string): $CancellablePromise<$models.ObjectDetail> {
+    return $Call.ByID(1754770179, contextName, ref, $namespace, name);
+}
+
+/**
  * GetYAML returns the object as YAML without managedFields.
  */
 export function GetYAML(contextName: string, ref: $models.ResourceRef, $namespace: string, name: string): $CancellablePromise<string> {
@@ -72,6 +80,13 @@ export function KubeconfigFiles(): $CancellablePromise<string[] | null> {
  */
 export function Namespaces(contextName: string): $CancellablePromise<string[] | null> {
     return $Call.ByID(2631297746, contextName);
+}
+
+/**
+ * ObjectEvents returns Kubernetes events involving the specified object.
+ */
+export function ObjectEvents(contextName: string, kind: string, $namespace: string, name: string): $CancellablePromise<$models.EventInfo[] | null> {
+    return $Call.ByID(691594004, contextName, kind, $namespace, name);
 }
 
 /**

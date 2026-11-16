@@ -11,6 +11,8 @@ export type {
     ContainerInfo,
     ContainerPort,
     ContextInfo,
+    EventInfo,
+    ObjectDetail,
     ResourceRef,
     ResourceType
 } from "./models.js";

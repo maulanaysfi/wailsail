@@ -46,6 +46,61 @@ export interface ContextInfo {
 }
 
 /**
+ * EventInfo describes a Kubernetes Event related to a selected object.
+ */
+export interface EventInfo {
+    /**
+     * "Normal" or "Warning"
+     */
+    "type": string;
+
+    /**
+     * short machine-readable reason
+     */
+    "reason": string;
+
+    /**
+     * human-readable description
+     */
+    "message": string;
+
+    /**
+     * occurrence count
+     */
+    "count": number;
+
+    /**
+     * reporting component / controller
+     */
+    "source": string;
+
+    /**
+     * involvedObject.fieldPath if set
+     */
+    "subObject": string;
+
+    /**
+     * RFC3339 timestamp
+     */
+    "firstSeen": string;
+
+    /**
+     * RFC3339 timestamp
+     */
+    "lastSeen": string;
+}
+
+/**
+ * ObjectDetail bundles the structured object, its YAML representation, and
+ * related Kubernetes events for the detail drawer.
+ */
+export interface ObjectDetail {
+    "object": { [_ in string]?: any } | null;
+    "yaml": string;
+    "events": EventInfo[] | null;
+}
+
+/**
  * ResourceRef identifies a Kubernetes resource type.
  */
 export interface ResourceRef {
