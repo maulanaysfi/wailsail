@@ -144,8 +144,8 @@
   .bar {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 10px;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
     border-bottom: 1px solid var(--border);
     font-size: 12px;
     color: var(--muted);
@@ -153,15 +153,15 @@
   .bar label {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
   }
   .host {
     flex: 1;
     min-height: 0;
-    padding: 4px 6px;
+    padding: var(--space-1) var(--space-2);
     background: #0f1117;
   }
   .banner {
-    margin: 6px 10px 0;
+    margin: var(--space-2) var(--space-3) 0;
   }
 </style>

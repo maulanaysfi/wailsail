@@ -1,3 +1,4 @@
+import { Window } from "@wailsio/runtime";
 import {
   Kube,
   Settings,
@@ -34,13 +35,17 @@ interface ConfirmRequest {
 
 const defaultSettings: SettingsData = {
   theme: "system",
+  scale: 100,
+  kubeconfigPaths: [],
   lastContext: "",
   lastNamespace: {},
   logTailLines: 500,
   logTimestamps: false,
-  showWide: false,
+  showWide: true,
   pinned: [],
 };
+
+export const scaleOptions = [50, 75, 100, 125, 150] as const;
 
 class AppState {
   contexts = $state<ContextInfo[]>([]);
@@ -61,6 +66,8 @@ class AppState {
   confirmRequest = $state<ConfirmRequest | null>(null);
   showForwards = $state(false);
   showApply = $state(false);
+  showSettings = $state(false);
+  defaultKubeconfigPath = $state("");
   forwardTarget = $state<Selection | null>(null);
   now = $state(Date.now());
 
@@ -73,7 +80,9 @@ class AppState {
     } catch (e) {
       this.toast(`Could not read settings: ${errorMessage(e)}`, "error");
     }
+    this.defaultKubeconfigPath = (await Settings.DefaultKubeconfig().catch(() => "")) ?? "";
     this.applyTheme();
+    this.applyScale();
     await this.loadContexts();
   }
 
@@ -162,6 +171,68 @@ class AppState {
     this.settings = { ...this.settings, ...patch };
     Settings.Save(this.settings).catch((e) => this.toast(`Could not save settings: ${errorMessage(e)}`, "error"));
     if ("theme" in patch) this.applyTheme();
+    if ("scale" in patch) this.applyScale();
+  }
+
+  applyScale() {
+    const factor = (this.settings.scale || 100) / 100;
+    if (factor < 1) {
+      // Wails v3 clamps native Window.SetZoom(< 1.0) to 1.0 on all desktop targets.
+      // Reset native webview zoom to 1.0 and apply sub-100% scaling via CSS zoom.
+      document.documentElement.style.zoom = String(factor);
+      Window.SetZoom(1).catch(() => {});
+      return;
+    }
+    Window.SetZoom(factor)
+      .then(() => (document.documentElement.style.zoom = ""))
+      .catch(() => (document.documentElement.style.zoom = String(factor)));
+  }
+
+  async setKubeconfigPaths(paths: string[]) {
+    this.saveSettings({ kubeconfigPaths: paths });
+    try {
+      await Kube.SetKubeconfigPaths(paths);
+    } catch (e) {
+      this.toast(`Could not apply kubeconfig paths: ${errorMessage(e)}`, "error");
+    }
+    await this.reloadContexts();
+  }
+
+  addKubeconfigPath(path: string) {
+    const p = path.trim();
+    const paths = this.settings.kubeconfigPaths ?? [];
+    if (!p || paths.includes(p)) return;
+    return this.setKubeconfigPaths([...paths, p]);
+  }
+
+  removeKubeconfigPath(path: string) {
+    return this.setKubeconfigPaths((this.settings.kubeconfigPaths ?? []).filter((p) => p !== path));
+  }
+
+  resetKubeconfigPaths() {
+    return this.setKubeconfigPaths(this.defaultKubeconfigPath ? [this.defaultKubeconfigPath] : []);
+  }
+
+  /** Re-read contexts after the kubeconfig sources changed. */
+  async reloadContexts() {
+    const prev = this.context;
+    this.context = "";
+    this.current = null;
+    this.selection = null;
+    this.resources = [];
+    this.namespaces = [];
+    this.serverVersion = "";
+    this.connectionError = "";
+    try {
+      this.contexts = (await Kube.Contexts()) ?? [];
+    } catch (e) {
+      this.contexts = [];
+      this.connectionError = `Could not load kubeconfig: ${errorMessage(e)}`;
+      return;
+    }
+    const names = this.contexts.map((c) => c.name);
+    const pick = names.includes(prev) ? prev : (this.contexts.find((c) => c.current)?.name ?? names[0] ?? "");
+    if (pick) await this.selectContext(pick);
   }
 
   applyTheme() {
@@ -218,4 +289,10 @@ export const app = new AppState();
 
 export function refOf(r: ResourceType): ResourceRef {
   return { group: r.group, version: r.version, resource: r.resource, kind: r.kind, namespaced: r.namespaced };
+}
+
+/** Active CSS zoom multiplier (1 when native webview zoom is used). */
+export function cssZoom(): number {
+  const z = parseFloat(document.documentElement.style.zoom || "");
+  return Number.isFinite(z) && z > 0 ? z : 1;
 }

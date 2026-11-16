@@ -1,14 +1,15 @@
 <script lang="ts">
-  import { app } from "../lib/store.svelte";
+  import { app, cssZoom } from "../lib/store.svelte";
   import LogViewer from "./LogViewer.svelte";
   import TerminalView from "./TerminalView.svelte";
 
-  let height = $state(300);
+  let height = $state(320);
 
   function startResize(e: PointerEvent) {
+    const z = cssZoom();
     const startY = e.clientY;
     const startH = height;
-    const move = (ev: PointerEvent) => (height = Math.min(640, Math.max(160, startH + startY - ev.clientY)));
+    const move = (ev: PointerEvent) => (height = Math.min(640, Math.max(160, startH + (startY - ev.clientY) / z)));
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
@@ -66,8 +67,8 @@
   .tabs {
     display: flex;
     align-items: center;
-    gap: 2px;
-    padding: 0 8px;
+    gap: var(--space-1);
+    padding: 0 var(--space-2);
     border-bottom: 1px solid var(--border);
     overflow-x: auto;
   }
@@ -85,13 +86,13 @@
   .x {
     all: unset;
     cursor: pointer;
-    padding: 6px 6px;
+    padding: var(--space-2);
   }
   .badge {
     font-size: 10px;
     text-transform: uppercase;
     color: var(--accent);
-    margin-right: 4px;
+    margin-right: var(--space-1);
   }
   .x {
     color: var(--muted);

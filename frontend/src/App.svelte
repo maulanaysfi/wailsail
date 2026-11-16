@@ -8,6 +8,7 @@
   import BottomDock from "./components/BottomDock.svelte";
   import PortForwardModal from "./components/PortForwardModal.svelte";
   import ApplyModal from "./components/ApplyModal.svelte";
+  import SettingsModal from "./components/SettingsModal.svelte";
 
   onMount(() => {
     app.init();
@@ -16,6 +17,7 @@
   function onKey(e: KeyboardEvent) {
     if (e.key === "Escape") {
       if (app.confirmRequest) app.answerConfirm(false);
+      else if (app.showSettings) app.showSettings = false;
       else if (app.showApply) app.showApply = false;
       else if (app.showForwards || app.forwardTarget) {
         app.showForwards = false;
@@ -62,6 +64,9 @@
   {#if app.showApply}
     <ApplyModal />
   {/if}
+  {#if app.showSettings}
+    <SettingsModal />
+  {/if}
 
   {#if app.confirmRequest}
     <div class="backdrop" role="presentation">
@@ -98,11 +103,11 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin: 8px 12px 0;
+    margin: var(--space-2) var(--space-3) 0;
   }
   .workspace {
     display: grid;
-    grid-template-columns: 210px 1fr;
+    grid-template-columns: 216px 1fr;
     flex: 1;
     min-height: 0;
   }
@@ -129,25 +134,25 @@
   .confirm .row {
     display: flex;
     justify-content: flex-end;
-    gap: 8px;
-    margin-top: 14px;
+    gap: var(--space-2);
+    margin-top: var(--space-3);
   }
   .toasts {
     position: fixed;
-    right: 14px;
-    bottom: 14px;
+    right: var(--space-3);
+    bottom: var(--space-3);
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--space-2);
     z-index: 30;
-    max-width: 420px;
+    max-width: 424px;
   }
   .toast {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
-    border-radius: 6px;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+    border-radius: var(--radius);
     background: var(--panel);
     border: 1px solid var(--border);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);

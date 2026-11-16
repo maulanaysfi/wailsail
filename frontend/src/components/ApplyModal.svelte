@@ -41,17 +41,18 @@
 <style>
   .editor {
     width: 100%;
-    height: 340px;
+    height: 344px;
+    padding: var(--space-2);
     font-family: var(--mono);
     font-size: 12px;
-    line-height: 1.5;
+    line-height: 16px;
     background: var(--code-bg);
     resize: vertical;
   }
   footer {
     display: flex;
     justify-content: flex-end;
-    gap: 8px;
-    margin-top: 12px;
+    gap: var(--space-2);
+    margin-top: var(--space-3);
   }
 </style>

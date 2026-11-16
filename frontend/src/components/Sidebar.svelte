@@ -91,24 +91,25 @@
     min-height: 0;
   }
   .search {
-    margin: 10px;
+    margin: var(--space-2);
+    height: var(--control-h);
   }
   .hint {
-    margin: 0 12px 8px;
+    margin: 0 var(--space-3) var(--space-2);
     color: var(--muted);
     font-size: 12px;
   }
   .scroll {
     overflow-y: auto;
     flex: 1;
-    padding-bottom: 12px;
+    padding-bottom: var(--space-3);
   }
   section {
-    margin-bottom: 4px;
+    margin-bottom: var(--space-1);
   }
   h4 {
-    margin: 8px 0 2px;
-    padding: 0 12px;
+    margin: var(--space-2) 0 var(--space-1);
+    padding: 0 var(--space-3);
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.06em;
@@ -120,7 +121,7 @@
     cursor: pointer;
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
     width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -144,7 +145,8 @@
     display: flex;
     align-items: center;
     width: 100%;
-    padding: 4px 12px 4px 22px;
+    min-height: var(--control-h-sm);
+    padding: 0 var(--space-3) 0 var(--space-4);
     cursor: pointer;
     font-size: 13px;
     border-left: 2px solid transparent;
@@ -167,7 +169,7 @@
     opacity: 0;
     color: var(--muted);
     font-size: 12px;
-    padding: 0 2px;
+    padding: 0 var(--space-1);
   }
   .item:hover .pin,
   .pin.on {

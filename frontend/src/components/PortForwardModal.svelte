@@ -118,17 +118,17 @@
   .form {
     display: flex;
     align-items: flex-end;
-    gap: 12px;
-    margin-bottom: 14px;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
   }
   .form label {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--space-1);
     font-size: 12px;
   }
   .form input {
-    width: 110px;
+    width: 112px;
   }
   .hint {
     color: var(--muted);
@@ -145,7 +145,7 @@
   th,
   td {
     text-align: left;
-    padding: 6px 8px;
+    padding: var(--space-2);
     border-bottom: 1px solid var(--border-soft);
   }
   th {
@@ -154,6 +154,6 @@
   .empty {
     color: var(--muted);
     text-align: center;
-    margin: 20px 0;
+    margin: var(--space-4) 0;
   }
 </style>

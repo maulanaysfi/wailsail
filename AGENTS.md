@@ -72,10 +72,11 @@ flowchart LR
 ```
 
 ### `internal/kube`
-- `Manager` loads `$KUBECONFIG` / `~/.kube/config` via `clientcmd.NewDefaultClientConfigLoadingRules()` and caches per-context `Clients` (typed, dynamic, cached discovery, RESTMapper).
+- `Manager` loads `$KUBECONFIG` / `~/.kube/config` via `clientcmd.NewDefaultClientConfigLoadingRules()` and caches per-context `Clients` (typed, dynamic, cached discovery, RESTMapper). `SetKubeconfigPaths` switches to user-configured files/directories (`~`, `$VAR`, `%VAR%` expanded; directories scanned non-recursively for valid kubeconfigs; `$KUBECONFIG` entries appended with lower precedence; empty list = standard rules). `Reset` re-scans directories.
 - `Service`:
   - `Contexts() ([]ContextInfo, error)`
   - `Reload()`
+  - `SetKubeconfigPaths(paths []string)` / `KubeconfigFiles() []string`
   - `DefaultNamespace(contextName string) (string, error)`
   - `ServerVersion(contextName string) (string, error)`
   - `Namespaces(contextName string) ([]string, error)`
@@ -102,7 +103,12 @@ flowchart LR
 - Resolves `Pod` or `Service` (via selector + ready pod + named/numeric `targetPort`) and listens on `127.0.0.1:<localPort>`, emitting updated `[]Forward` on `wailsail:portforwards`.
 
 ### `internal/settings`
-- `Service`: `Get() (Settings, error)` and `Save(st Settings) error` with atomic temp-file writes to `<UserConfigDir>/wailsail/settings.json`.
+- `Service`: `Get() (Settings, error)`, `Save(st Settings) error` with atomic temp-file writes to `<UserConfigDir>/wailsail/settings.json`, and `DefaultKubeconfig() string`.
+- `Settings` includes `scale` (UI zoom percent: 50/75/100/125/150, default 100, applied via `Window.SetZoom`) and `kubeconfigPaths` (default `[<home>/.kube/config]`, applied at startup in `main.go`).
+
+### Frontend conventions
+- Font: bundled Google Sans Flex (`frontend/public/fonts/`, OFL) via `--sans`.
+- Spacing follows an 8-point grid using `--space-1`..`--space-6` (4/8/16/24/32/40px) from `frontend/public/style.css`.
 
 ---
 

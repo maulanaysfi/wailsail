@@ -160,8 +160,8 @@
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 8px;
-    padding: 6px 10px;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
     border-bottom: 1px solid var(--border);
     font-size: 12px;
     color: var(--muted);
@@ -169,7 +169,7 @@
   .bar label {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
   }
   .search {
     margin-left: auto;
@@ -178,10 +178,10 @@
   .out {
     flex: 1;
     overflow: auto;
-    padding: 8px 12px;
+    padding: var(--space-2) var(--space-3);
     font-family: var(--mono);
     font-size: 12px;
-    line-height: 1.45;
+    line-height: 16px;
     background: var(--code-bg);
     white-space: pre-wrap;
     word-break: break-all;
@@ -190,6 +190,6 @@
     background: var(--hover);
   }
   .banner {
-    margin: 6px 10px 0;
+    margin: var(--space-2) var(--space-3) 0;
   }
 </style>

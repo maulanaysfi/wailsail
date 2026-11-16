@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Kube, errorMessage } from "../lib/api";
-  import { app, refOf, type Selection } from "../lib/store.svelte";
+  import { app, cssZoom, refOf, type Selection } from "../lib/store.svelte";
   import { kindKey, restartableKinds, scalableKinds } from "../lib/resources";
 
   let { sel }: { sel: Selection } = $props();
@@ -131,9 +131,10 @@
   }
 
   function startResize(e: PointerEvent) {
+    const z = cssZoom();
     const startX = e.clientX;
     const startW = width;
-    const move = (ev: PointerEvent) => (width = Math.min(1100, Math.max(360, startW + startX - ev.clientX)));
+    const move = (ev: PointerEvent) => (width = Math.min(1100, Math.max(360, startW + (startX - ev.clientX) / z)));
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
@@ -220,13 +221,13 @@
   header {
     display: flex;
     align-items: center;
-    padding: 10px 12px 6px;
-    gap: 8px;
+    padding: var(--space-3) var(--space-3) var(--space-2);
+    gap: var(--space-2);
   }
   .title {
     display: flex;
     align-items: baseline;
-    gap: 8px;
+    gap: var(--space-2);
     min-width: 0;
     flex: 1;
   }
@@ -249,8 +250,8 @@
   .actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
-    padding: 4px 12px 10px;
+    gap: var(--space-2);
+    padding: 0 var(--space-3) var(--space-3);
     border-bottom: 1px solid var(--border);
   }
   .grow {
@@ -258,7 +259,7 @@
   }
   .scale {
     display: inline-flex;
-    gap: 4px;
+    gap: var(--space-1);
   }
   .scale input {
     width: 64px;
@@ -268,10 +269,10 @@
     resize: none;
     border: 0;
     border-radius: 0;
-    padding: 12px;
+    padding: var(--space-3);
     font-family: var(--mono);
     font-size: 12px;
-    line-height: 1.5;
+    line-height: 16px;
     background: var(--code-bg);
     color: var(--text);
     tab-size: 2;
@@ -281,6 +282,6 @@
     box-shadow: inset 2px 0 0 var(--accent);
   }
   .banner {
-    margin: 8px 12px;
+    margin: var(--space-2) var(--space-3);
   }
 </style>

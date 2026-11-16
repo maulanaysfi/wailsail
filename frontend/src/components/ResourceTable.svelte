@@ -1,11 +1,13 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { Kube, newStreamId, on, topics, errorMessage, type Column, type Row, type WatchEvent } from "../lib/api";
-  import { app, refOf } from "../lib/store.svelte";
+  import { app, cssZoom, refOf } from "../lib/store.svelte";
   import { age, compareCells, toneFor } from "../lib/format";
-  import { kindKey } from "../lib/resources";
+  import { kindKey, resourceKey } from "../lib/resources";
 
-  const ROW_H = 28;
+  const ROW_H = 32;
+  const MIN_COL_W = 48;
+  const ACTIONS_COL_W = 112;
 
   const rows = new Map<string, Row>();
   let version = $state(0);
@@ -19,8 +21,18 @@
   let scrollTop = $state(0);
   let viewportH = $state(600);
 
+  // Per-resource custom column widths and custom column order.
+  let colWidths = $state<Record<string, number>>({});
+  let colOrders = $state<Record<string, string[]>>({});
+  let resizingKey = $state("");
+  let draggingKey = $state("");
+  let dropTargetKey = $state("");
+  let dropAfter = $state(false);
+  let headerRowEl: HTMLTableRowElement | undefined = $state();
+
   const allNamespaces = $derived(!!app.current?.namespaced && app.namespace === "");
   const isPod = $derived(app.current ? kindKey(app.current) === "/Pod" : false);
+  const resScopeKey = $derived(app.current ? resourceKey(app.current) : "_");
 
   // Start a watch whenever the context, resource type or namespace changes.
   $effect(() => {
@@ -65,29 +77,163 @@
     key: string;
     label: string;
     title: string;
+    defaultWidth: number;
     get: (r: Row) => string;
     status?: boolean;
   }
 
-  const displayCols = $derived.by<DisplayCol[]>(() => {
+  function defaultWidthFor(name: string, index: number): number {
+    const n = name.toLowerCase();
+    if (index === 0 || n === "name") return 240;
+    if (n === "namespace") return 136;
+    if (n === "ready" || n === "restarts" || n === "age" || n === "desired" || n === "current" || n === "up-to-date" || n === "available") return 88;
+    if (n === "status" || n === "phase" || n === "type" || n === "roles") return 120;
+    if (n === "ip" || n === "cluster-ip" || n === "external-ip" || n === "internal-ip") return 136;
+    if (n === "node" || n === "nominated node") return 168;
+    if (n === "containers" || n === "images" || n === "selector" || n === "ports") return 200;
+    return 144;
+  }
+
+  // Always include all columns (kubectl get -o wide equivalent).
+  const baseCols = $derived.by<DisplayCol[]>(() => {
     const out: DisplayCol[] = [];
     columns.forEach((c, i) => {
-      if (c.priority > 0 && !app.settings.showWide) return;
       out.push({
         key: `c${i}`,
         label: c.name,
-        title: c.description,
+        title: c.description || c.name,
+        defaultWidth: defaultWidthFor(c.name, i),
         get: (r) => r.cells[i] ?? "",
         status: c.name === "Status" || c.name === "Phase",
       });
       if (i === 0 && allNamespaces) {
-        out.push({ key: "namespace", label: "Namespace", title: "", get: (r) => r.namespace });
+        out.push({
+          key: "namespace",
+          label: "Namespace",
+          title: "Namespace",
+          defaultWidth: defaultWidthFor("Namespace", -1),
+          get: (r) => r.namespace,
+        });
       }
     });
-    if (columns.length === 0) out.push({ key: "name", label: "Name", title: "", get: (r) => r.name });
-    out.push({ key: "age", label: "Age", title: "Time since creation", get: (r) => age(r.created, app.now) });
+    if (columns.length === 0) {
+      out.push({ key: "name", label: "Name", title: "Name", defaultWidth: 240, get: (r) => r.name });
+    }
+    out.push({
+      key: "age",
+      label: "Age",
+      title: "Time since creation",
+      defaultWidth: 88,
+      get: (r) => age(r.created, app.now),
+    });
     return out;
   });
+
+  const displayCols = $derived.by<DisplayCol[]>(() => {
+    const order = colOrders[resScopeKey];
+    if (!order || order.length === 0) return baseCols;
+    const byKey = new Map(baseCols.map((c) => [c.key, c]));
+    const ordered: DisplayCol[] = [];
+    for (const k of order) {
+      const col = byKey.get(k);
+      if (col) {
+        ordered.push(col);
+        byKey.delete(k);
+      }
+    }
+    for (const col of byKey.values()) ordered.push(col);
+    return ordered;
+  });
+
+  function widthKey(c: DisplayCol): string {
+    return `${resScopeKey}:${c.label}`;
+  }
+
+  function colWidth(c: DisplayCol): number {
+    return colWidths[widthKey(c)] ?? c.defaultWidth;
+  }
+
+  const totalTableW = $derived(
+    displayCols.reduce((sum, c) => sum + colWidth(c), 0) + (isPod ? ACTIONS_COL_W : 0),
+  );
+
+  function startColResize(e: PointerEvent, c: DisplayCol) {
+    e.stopPropagation();
+    e.preventDefault();
+    const wk = widthKey(c);
+    const z = cssZoom();
+    const startX = e.clientX;
+    const startW = colWidth(c);
+    resizingKey = c.key;
+
+    const move = (ev: PointerEvent) => {
+      const next = Math.max(MIN_COL_W, Math.round(startW + (ev.clientX - startX) / z));
+      colWidths[wk] = next;
+    };
+    const up = () => {
+      resizingKey = "";
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
+  function resetColWidth(e: MouseEvent, c: DisplayCol) {
+    e.stopPropagation();
+    delete colWidths[widthKey(c)];
+  }
+
+  function startHeaderPointer(e: PointerEvent, c: DisplayCol) {
+    if (e.button !== 0) return;
+    if ((e.target as HTMLElement)?.closest(".col-resizer")) return;
+    const startX = e.clientX;
+    let moved = false;
+
+    const move = (ev: PointerEvent) => {
+      if (!moved && Math.abs(ev.clientX - startX) > 5) {
+        moved = true;
+        draggingKey = c.key;
+      }
+      if (!moved || !headerRowEl) return;
+      const ths = Array.from(headerRowEl.querySelectorAll<HTMLTableCellElement>("th[data-col-key]"));
+      let target = "";
+      let after = false;
+      for (const th of ths) {
+        const k = th.dataset.colKey ?? "";
+        const rect = th.getBoundingClientRect();
+        if (ev.clientX >= rect.left && ev.clientX <= rect.right) {
+          target = k;
+          after = ev.clientX > rect.left + rect.width / 2;
+          break;
+        }
+      }
+      dropTargetKey = target && target !== c.key ? target : "";
+      dropAfter = after;
+    };
+
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      if (moved) {
+        if (dropTargetKey && dropTargetKey !== c.key) {
+          const cur = displayCols.map((col) => col.key).filter((k) => k !== c.key);
+          const idx = cur.indexOf(dropTargetKey);
+          if (idx !== -1) {
+            cur.splice(dropAfter ? idx + 1 : idx, 0, c.key);
+            colOrders[resScopeKey] = cur;
+          }
+        }
+        draggingKey = "";
+        dropTargetKey = "";
+      } else {
+        sortBy(c.key);
+      }
+    };
+
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
 
   const view = $derived.by(() => {
     version; // re-run on row changes
@@ -140,15 +286,11 @@
   }
 </script>
 
-<section class="table-pane">
+<section class="table-pane" class:resizing={resizingKey !== ""} class:dragging={draggingKey !== ""}>
   <div class="toolbar">
     <h2>{app.current?.kind ?? "—"}</h2>
     <span class="count">{view.length}{filter ? ` / ${totalRows}` : ""}</span>
     <input class="filter" placeholder="Filter…" bind:value={filter} />
-    <label class="check">
-      <input type="checkbox" checked={app.settings.showWide} onchange={(e) => app.saveSettings({ showWide: e.currentTarget.checked })} />
-      Wide
-    </label>
   </div>
 
   {#if error}
@@ -156,13 +298,37 @@
   {/if}
 
   <div class="grid-wrap" bind:clientHeight={viewportH} onscroll={(e) => (scrollTop = e.currentTarget.scrollTop)}>
-    <table style={`--cols:${displayCols.length}`}>
+    <table style={`width:${totalTableW}px`}>
+      <colgroup>
+        {#each displayCols as c (c.key)}
+          <col style={`width:${colWidth(c)}px`} />
+        {/each}
+        {#if isPod}<col style={`width:${ACTIONS_COL_W}px`} />{/if}
+      </colgroup>
       <thead>
-        <tr>
+        <tr bind:this={headerRowEl}>
           {#each displayCols as c (c.key)}
-            <th title={c.title} onclick={() => sortBy(c.key)}>
-              {c.label}
-              {#if sortKey === c.key || (c.key === "c0" && sortKey === "name")}<span class="arrow">{sortAsc ? "▲" : "▼"}</span>{/if}
+            <th
+              data-col-key={c.key}
+              title={c.title}
+              class:is-dragging={draggingKey === c.key}
+              class:drop-before={dropTargetKey === c.key && !dropAfter}
+              class:drop-after={dropTargetKey === c.key && dropAfter}
+              onpointerdown={(e) => startHeaderPointer(e, c)}
+            >
+              <span class="th-label">
+                {c.label}
+                {#if sortKey === c.key || (c.key === "c0" && sortKey === "name")}<span class="arrow">{sortAsc ? "▲" : "▼"}</span>{/if}
+              </span>
+              <span
+                class="col-resizer"
+                class:active={resizingKey === c.key}
+                role="separator"
+                aria-orientation="vertical"
+                title="Drag to resize column, double-click to reset"
+                onpointerdown={(e) => startColResize(e, c)}
+                ondblclick={(e) => resetColWidth(e, c)}
+              ></span>
             </th>
           {/each}
           {#if isPod}<th class="actions-h"></th>{/if}
@@ -174,7 +340,7 @@
           <tr class:selected={isSelected(r)} onclick={() => select(r)}>
             {#each displayCols as c (c.key)}
               {@const v = c.get(r)}
-              <td class={c.status ? `tone-${toneFor(v)}` : ""} title={v}>{v}</td>
+              <td class={c.status ? `tone-${toneFor(v)}` : ""} class:name-col={c.key === "c0" || c.key === "name"} title={v}>{v}</td>
             {/each}
             {#if isPod}
               <td class="actions">
@@ -202,11 +368,20 @@
     min-width: 0;
     min-height: 0;
   }
+  .table-pane.resizing {
+    cursor: col-resize;
+    user-select: none;
+  }
+  .table-pane.dragging {
+    cursor: grabbing;
+    user-select: none;
+  }
   .toolbar {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 10px 14px;
+    gap: var(--space-2);
+    min-height: 48px;
+    padding: var(--space-2) var(--space-3);
   }
   h2 {
     margin: 0;
@@ -221,13 +396,7 @@
   .filter {
     margin-left: auto;
     width: 240px;
-  }
-  .check {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 12px;
-    color: var(--muted);
+    height: var(--control-h);
   }
   .grid-wrap {
     flex: 1;
@@ -236,31 +405,70 @@
     position: relative;
   }
   table {
-    width: 100%;
+    table-layout: fixed;
+    min-width: 100%;
     border-collapse: collapse;
     font-size: 12.5px;
   }
   thead th {
     position: sticky;
     top: 0;
-    z-index: 1;
+    z-index: 2;
     background: var(--bg);
     text-align: left;
     font-weight: 600;
     color: var(--muted);
-    padding: 6px 10px;
+    height: var(--control-h);
+    padding: 0 var(--space-2);
     border-bottom: 1px solid var(--border);
-    cursor: pointer;
+    border-right: 1px solid var(--border-soft);
+    cursor: grab;
     user-select: none;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: clip;
+  }
+  thead th:active {
+    cursor: grabbing;
+  }
+  thead th.is-dragging {
+    opacity: 0.55;
+    background: var(--hover);
+  }
+  thead th.drop-before {
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+  thead th.drop-after {
+    box-shadow: inset -2px 0 0 var(--accent);
+  }
+  .th-label {
+    display: block;
+    overflow: hidden;
+    text-overflow: clip;
+    white-space: nowrap;
+    padding-right: var(--space-1);
+  }
+  .col-resizer {
+    position: absolute;
+    top: 0;
+    right: -3px;
+    bottom: 0;
+    width: 7px;
+    cursor: col-resize;
+    z-index: 3;
+  }
+  .col-resizer:hover,
+  .col-resizer.active {
+    background: var(--accent);
   }
   .arrow {
     font-size: 9px;
-    margin-left: 4px;
+    margin-left: var(--space-1);
   }
   tbody tr {
-    height: 28px;
+    height: 32px;
     cursor: pointer;
+    background: var(--bg);
   }
   tbody tr:not(.spacer):hover {
     background: var(--hover);
@@ -269,20 +477,21 @@
     background: var(--selected);
   }
   td {
-    padding: 0 10px;
+    position: relative;
+    background: inherit;
+    padding: 0 var(--space-2);
     border-bottom: 1px solid var(--border-soft);
     white-space: nowrap;
     overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 420px;
+    text-overflow: clip;
   }
-  td:first-child {
+  td.name-col {
     color: var(--text-strong);
   }
   .actions-h,
   .actions {
-    width: 1%;
     text-align: right;
+    cursor: default;
   }
   .actions .mini {
     visibility: hidden;
@@ -293,9 +502,9 @@
   .empty {
     text-align: center;
     color: var(--muted);
-    margin-top: 40px;
+    margin-top: var(--space-6);
   }
   .banner {
-    margin: 0 14px 8px;
+    margin: 0 var(--space-3) var(--space-2);
   }
 </style>
