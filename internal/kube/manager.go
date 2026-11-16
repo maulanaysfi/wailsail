@@ -5,7 +5,11 @@ package kube
 import (
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
 	"sort"
+	"strings"
 	"sync"
 
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -21,21 +25,23 @@ import (
 
 // Clients bundles every client wailsail needs for a single context.
 type Clients struct {
-	Context    string
-	Config     *rest.Config
-	HTTP       *http.Client
-	Typed      kubernetes.Interface
-	Dynamic    dynamic.Interface
-	Discovery  discovery.CachedDiscoveryInterface
-	Mapper     meta.ResettableRESTMapper
-	DefaultNS  string
+	Context   string
+	Config    *rest.Config
+	HTTP      *http.Client
+	Typed     kubernetes.Interface
+	Dynamic   dynamic.Interface
+	Discovery discovery.CachedDiscoveryInterface
+	Mapper    meta.ResettableRESTMapper
+	DefaultNS string
 }
 
 // Manager loads kubeconfig files and lazily builds clients per context.
 type Manager struct {
-	mu      sync.Mutex
-	rules   *clientcmd.ClientConfigLoadingRules
-	clients map[string]*Clients
+	mu          sync.Mutex
+	rules       *clientcmd.ClientConfigLoadingRules
+	customPaths []string // user-configured files/directories; nil = standard rules
+	custom      bool
+	clients     map[string]*Clients
 }
 
 // NewManager uses the standard loading rules ($KUBECONFIG, then ~/.kube/config).
@@ -48,6 +54,138 @@ func NewManagerWithRules(rules *clientcmd.ClientConfigLoadingRules) *Manager {
 	return &Manager{rules: rules, clients: map[string]*Clients{}}
 }
 
+// SetKubeconfigPaths configures the kubeconfig files and/or directories to
+// load. Directories are scanned (non-recursively) for valid kubeconfig
+// files. Entries listed in $KUBECONFIG are appended with lower precedence.
+// An empty list restores the standard loading rules. Cached clients are
+// dropped.
+func (m *Manager) SetKubeconfigPaths(paths []string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.customPaths = append([]string(nil), paths...)
+	m.custom = len(paths) > 0
+	m.rebuildRulesLocked()
+	m.clients = map[string]*Clients{}
+}
+
+// KubeconfigFiles returns the resolved kubeconfig files currently in use.
+func (m *Manager) KubeconfigFiles() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.rules.ExplicitPath != "" {
+		return []string{m.rules.ExplicitPath}
+	}
+	return append([]string(nil), m.rules.Precedence...)
+}
+
+func (m *Manager) rebuildRulesLocked() {
+	if !m.custom {
+		m.rules = clientcmd.NewDefaultClientConfigLoadingRules()
+		return
+	}
+	files := ResolveKubeconfigPaths(m.customPaths)
+	if env := os.Getenv(clientcmd.RecommendedConfigPathEnvVar); env != "" {
+		files = appendUnique(files, filepath.SplitList(env)...)
+	}
+	m.rules = &clientcmd.ClientConfigLoadingRules{Precedence: files}
+}
+
+// ResolveKubeconfigPaths expands ~ and environment variables in each entry
+// and turns directories into the valid kubeconfig files they contain.
+// Missing entries are skipped. The result is de-duplicated and ordered.
+func ResolveKubeconfigPaths(paths []string) []string {
+	var out []string
+	for _, raw := range paths {
+		p := ExpandPath(raw)
+		if p == "" {
+			continue
+		}
+		fi, err := os.Stat(p)
+		if err != nil {
+			continue
+		}
+		if !fi.IsDir() {
+			out = appendUnique(out, p)
+			continue
+		}
+		entries, err := os.ReadDir(p)
+		if err != nil {
+			continue
+		}
+		names := make([]string, 0, len(entries))
+		for _, e := range entries {
+			n := e.Name()
+			if e.IsDir() || strings.HasPrefix(n, ".") || strings.HasSuffix(n, "~") {
+				continue
+			}
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		for _, n := range names {
+			f := filepath.Join(p, n)
+			if isKubeconfigFile(f) {
+				out = appendUnique(out, f)
+			}
+		}
+	}
+	return out
+}
+
+const maxKubeconfigSize = 8 << 20
+
+func isKubeconfigFile(path string) bool {
+	fi, err := os.Stat(path)
+	if err != nil || !fi.Mode().IsRegular() || fi.Size() == 0 || fi.Size() > maxKubeconfigSize {
+		return false
+	}
+	cfg, err := clientcmd.LoadFromFile(path)
+	if err != nil {
+		return false
+	}
+	return len(cfg.Contexts) > 0 || len(cfg.Clusters) > 0 || len(cfg.AuthInfos) > 0
+}
+
+var windowsEnvVar = regexp.MustCompile(`%([A-Za-z_][A-Za-z0-9_]*)%`)
+
+// ExpandPath expands a leading ~, $VAR / ${VAR} and %VAR% references.
+func ExpandPath(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return ""
+	}
+	if p == "~" || strings.HasPrefix(p, "~/") || strings.HasPrefix(p, `~\`) {
+		if home, err := os.UserHomeDir(); err == nil {
+			p = filepath.Join(home, p[1:])
+		}
+	}
+	p = windowsEnvVar.ReplaceAllStringFunc(p, func(m string) string {
+		if v, ok := os.LookupEnv(m[1 : len(m)-1]); ok {
+			return v
+		}
+		return m
+	})
+	return filepath.Clean(os.ExpandEnv(p))
+}
+
+func appendUnique(list []string, items ...string) []string {
+	for _, it := range items {
+		if it == "" {
+			continue
+		}
+		dup := false
+		for _, have := range list {
+			if have == it {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			list = append(list, it)
+		}
+	}
+	return list
+}
+
 // RawConfig returns the merged kubeconfig.
 func (m *Manager) RawConfig() (*clientcmdapi.Config, error) {
 	m.mu.Lock()
@@ -57,8 +195,12 @@ func (m *Manager) RawConfig() (*clientcmdapi.Config, error) {
 }
 
 // Reset drops all cached clients so the next call re-reads kubeconfig.
+// Configured directories are re-scanned.
 func (m *Manager) Reset() {
 	m.mu.Lock()
+	if m.custom {
+		m.rebuildRulesLocked()
+	}
 	m.clients = map[string]*Clients{}
 	m.mu.Unlock()
 }

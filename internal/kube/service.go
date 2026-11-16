@@ -64,6 +64,19 @@ func (s *Service) Reload() {
 	s.mgr.Reset()
 }
 
+// SetKubeconfigPaths replaces the kubeconfig files/directories to load,
+// stopping watches and dropping cached clients. An empty list restores the
+// standard loading rules ($KUBECONFIG, then ~/.kube/config).
+func (s *Service) SetKubeconfigPaths(paths []string) {
+	s.streams.StopAll()
+	s.mgr.SetKubeconfigPaths(paths)
+}
+
+// KubeconfigFiles returns the resolved kubeconfig files currently loaded.
+func (s *Service) KubeconfigFiles() []string {
+	return s.mgr.KubeconfigFiles()
+}
+
 // DefaultNamespace returns the namespace configured for a context.
 func (s *Service) DefaultNamespace(contextName string) (string, error) {
 	c, err := s.mgr.For(contextName)

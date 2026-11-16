@@ -33,7 +33,14 @@ func main() {
 		log.Fatal(err)
 	}
 
+	settingsSvc := settings.NewService(settingsPath)
 	mgr := kube.NewManager()
+	if st, err := settingsSvc.Get(); err != nil {
+		log.Printf("settings: %v", err)
+	} else {
+		mgr.SetKubeconfigPaths(st.KubeconfigPaths)
+	}
+
 	app := application.New(application.Options{
 		Name:        "wailsail",
 		Description: "An original Kubernetes desktop client written in Go with Wails v3",
@@ -43,7 +50,7 @@ func main() {
 			application.NewService(logs.NewService(mgr, emit)),
 			application.NewService(exec.NewService(mgr, emit)),
 			application.NewService(portforward.NewService(mgr, emit)),
-			application.NewService(settings.NewService(settingsPath)),
+			application.NewService(settingsSvc),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),

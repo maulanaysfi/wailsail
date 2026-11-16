@@ -9,6 +9,16 @@ export interface Settings {
      * "system", "light" or "dark"
      */
     "theme": string;
+
+    /**
+     * UI scale in percent: 50, 75, 100, 125 or 150
+     */
+    "scale": number;
+
+    /**
+     * kubeconfig files and/or directories to scan
+     */
+    "kubeconfigPaths": string[] | null;
     "lastContext": string;
 
     /**

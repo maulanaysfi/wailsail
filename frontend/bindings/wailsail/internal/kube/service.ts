@@ -60,6 +60,13 @@ export function GetYAML(contextName: string, ref: $models.ResourceRef, $namespac
 }
 
 /**
+ * KubeconfigFiles returns the resolved kubeconfig files currently loaded.
+ */
+export function KubeconfigFiles(): $CancellablePromise<string[] | null> {
+    return $Call.ByID(2478097620);
+}
+
+/**
  * Namespaces lists namespace names. When listing is forbidden it falls back
  * to the context's default namespace.
  */
@@ -100,6 +107,15 @@ export function Scale(contextName: string, ref: $models.ResourceRef, $namespace:
  */
 export function ServerVersion(contextName: string): $CancellablePromise<string> {
     return $Call.ByID(3651824699, contextName);
+}
+
+/**
+ * SetKubeconfigPaths replaces the kubeconfig files/directories to load,
+ * stopping watches and dropping cached clients. An empty list restores the
+ * standard loading rules ($KUBECONFIG, then ~/.kube/config).
+ */
+export function SetKubeconfigPaths(paths: string[] | null): $CancellablePromise<void> {
+    return $Call.ByID(804433931, paths);
 }
 
 /**

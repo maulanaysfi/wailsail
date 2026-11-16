@@ -12,22 +12,68 @@ import (
 
 // Settings are the persisted user preferences.
 type Settings struct {
-	Theme         string            `json:"theme"` // "system", "light" or "dark"
-	LastContext   string            `json:"lastContext"`
-	LastNamespace map[string]string `json:"lastNamespace"` // per context; "" = all namespaces
-	LogTailLines  int64             `json:"logTailLines"`
-	LogTimestamps bool              `json:"logTimestamps"`
-	ShowWide      bool              `json:"showWide"`
-	Pinned        []string          `json:"pinned"` // resource keys "group/resource"
+	Theme           string            `json:"theme"`           // "system", "light" or "dark"
+	Scale           int               `json:"scale"`           // UI scale in percent: 50, 75, 100, 125 or 150
+	KubeconfigPaths []string          `json:"kubeconfigPaths"` // kubeconfig files and/or directories to scan
+	LastContext     string            `json:"lastContext"`
+	LastNamespace   map[string]string `json:"lastNamespace"` // per context; "" = all namespaces
+	LogTailLines    int64             `json:"logTailLines"`
+	LogTimestamps   bool              `json:"logTimestamps"`
+	ShowWide        bool              `json:"showWide"`
+	Pinned          []string          `json:"pinned"` // resource keys "group/resource"
+}
+
+// DefaultScale is the UI scale used when none (or an invalid one) is stored.
+const DefaultScale = 100
+
+// ValidScales lists the selectable UI scales in percent.
+var ValidScales = []int{50, 75, 100, 125, 150}
+
+// DefaultKubeconfigPath returns the platform default kubeconfig location:
+// $HOME/.kube/config on Linux/macOS, %USERPROFILE%\.kube\config on Windows.
+func DefaultKubeconfigPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return filepath.Join(".kube", "config")
+	}
+	return filepath.Join(home, ".kube", "config")
 }
 
 // Defaults returns the initial settings.
 func Defaults() Settings {
 	return Settings{
-		Theme:         "system",
-		LastNamespace: map[string]string{},
-		LogTailLines:  500,
-		Pinned:        []string{},
+		Theme:           "system",
+		Scale:           DefaultScale,
+		KubeconfigPaths: []string{DefaultKubeconfigPath()},
+		LastNamespace:   map[string]string{},
+		LogTailLines:    500,
+		ShowWide:        true,
+		Pinned:          []string{},
+	}
+}
+
+func validScale(v int) bool {
+	for _, s := range ValidScales {
+		if s == v {
+			return true
+		}
+	}
+	return false
+}
+
+// normalize fills missing or invalid fields with defaults.
+func (st *Settings) normalize() {
+	if !validScale(st.Scale) {
+		st.Scale = DefaultScale
+	}
+	if st.KubeconfigPaths == nil {
+		st.KubeconfigPaths = []string{DefaultKubeconfigPath()}
+	}
+	if st.LastNamespace == nil {
+		st.LastNamespace = map[string]string{}
+	}
+	if st.Pinned == nil {
+		st.Pinned = []string{}
 	}
 }
 
@@ -64,14 +110,12 @@ func (s *Service) Get() (Settings, error) {
 	if err := json.Unmarshal(b, &st); err != nil {
 		return Defaults(), nil // corrupt file: start fresh rather than fail
 	}
-	if st.LastNamespace == nil {
-		st.LastNamespace = map[string]string{}
-	}
-	if st.Pinned == nil {
-		st.Pinned = []string{}
-	}
+	st.normalize()
 	return st, nil
 }
+
+// DefaultKubeconfig returns the platform default kubeconfig path.
+func (s *Service) DefaultKubeconfig() string { return DefaultKubeconfigPath() }
 
 // Save writes settings atomically.
 func (s *Service) Save(st Settings) error {

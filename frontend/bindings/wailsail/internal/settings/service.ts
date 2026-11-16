@@ -15,6 +15,13 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as $models from "./models.js";
 
 /**
+ * DefaultKubeconfig returns the platform default kubeconfig path.
+ */
+export function DefaultKubeconfig(): $CancellablePromise<string> {
+    return $Call.ByID(2625528376);
+}
+
+/**
  * Get loads settings, returning defaults when the file is missing.
  */
 export function Get(): $CancellablePromise<$models.Settings> {
