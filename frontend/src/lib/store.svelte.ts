@@ -101,14 +101,29 @@ class AppState {
   }
 
   async reload() {
+    const prevCtx = this.context;
+    const prevResKey = this.current ? resourceKey(this.current) : "";
+    const prevSelection = this.selection;
     await Kube.Reload();
-    const ctx = this.context;
     this.context = "";
     this.contexts = (await Kube.Contexts().catch(() => [])) ?? [];
-    if (ctx) await this.selectContext(ctx);
+    const names = this.contexts.map((c) => c.name);
+    const pick = names.includes(prevCtx) ? prevCtx : (this.contexts.find((c) => c.current)?.name ?? names[0] ?? "");
+    if (pick) {
+      await this.selectContext(pick, {
+        preserveResourceKey: prevResKey,
+        preserveSelection: pick === prevCtx ? prevSelection : null,
+      });
+    }
   }
 
-  async selectContext(name: string) {
+  async selectContext(
+    name: string,
+    opts?: { preserveResourceKey?: string; preserveSelection?: Selection | null },
+  ) {
+    const wantResKey = opts?.preserveResourceKey ?? (this.current ? resourceKey(this.current) : "");
+    const wantSelection = opts?.preserveSelection !== undefined ? opts.preserveSelection : (this.context === name ? this.selection : null);
+
     this.context = name;
     this.selection = null;
     this.current = null;
@@ -136,8 +151,12 @@ class AppState {
       this.serverVersion = version;
       this.resources = resources ?? [];
       this.namespaces = namespaces ?? [];
+      const preserved = wantResKey ? this.resources.find((r) => resourceKey(r) === wantResKey) : undefined;
       const pods = this.resources.find((r) => kindKey(r) === "/Pod");
-      this.current = pods ?? this.resources[0] ?? null;
+      this.current = preserved ?? pods ?? this.resources[0] ?? null;
+      if (wantSelection && this.current && resourceKey(wantSelection.type) === resourceKey(this.current)) {
+        this.selection = { ...wantSelection, type: this.current };
+      }
     } catch (e) {
       if (this.context === name) this.connectionError = errorMessage(e);
     } finally {
@@ -216,6 +235,8 @@ class AppState {
   /** Re-read contexts after the kubeconfig sources changed. */
   async reloadContexts() {
     const prev = this.context;
+    const prevResKey = this.current ? resourceKey(this.current) : "";
+    const prevSelection = this.selection;
     this.context = "";
     this.current = null;
     this.selection = null;
@@ -232,7 +253,12 @@ class AppState {
     }
     const names = this.contexts.map((c) => c.name);
     const pick = names.includes(prev) ? prev : (this.contexts.find((c) => c.current)?.name ?? names[0] ?? "");
-    if (pick) await this.selectContext(pick);
+    if (pick) {
+      await this.selectContext(pick, {
+        preserveResourceKey: prevResKey,
+        preserveSelection: pick === prev ? prevSelection : null,
+      });
+    }
   }
 
   applyTheme() {

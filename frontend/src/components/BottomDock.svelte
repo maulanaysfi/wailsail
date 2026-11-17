@@ -24,15 +24,15 @@
   <header class="tabs">
     {#each app.dock as t (t.id)}
       <div class="tab" class:active={app.activeDock === t.id}>
-        <button class="label" onclick={() => (app.activeDock = t.id)}>
+        <button class="label" onclick={() => (app.activeDock = t.id)} title={`Switch to ${t.kind} tab for ${t.title}`}>
           <span class="badge">{t.kind}</span>
           {t.title}
         </button>
-        <button class="x" onclick={() => app.closeDock(t.id)} title="Close tab">✕</button>
+        <button class="x" onclick={() => app.closeDock(t.id)} title={`Close ${t.kind} tab for ${t.title}`}>✕</button>
       </div>
     {/each}
     <span class="grow"></span>
-    <button class="ghost" onclick={() => (app.dockOpen = false)} title="Minimize dock">▾</button>
+    <button class="ghost" onclick={() => (app.dockOpen = false)} title="Minimize bottom dock">▾</button>
   </header>
 
   {#each app.dock as t (t.id)}

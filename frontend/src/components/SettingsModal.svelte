@@ -64,7 +64,7 @@
   <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="settings-title">
     <header>
       <h3 id="settings-title">Settings</h3>
-      <button class="ghost" onclick={close} title="Close">✕</button>
+      <button class="ghost" onclick={close} title="Close settings (Esc)">✕</button>
     </header>
 
     <section>
@@ -78,6 +78,7 @@
               aria-checked={app.settings.scale === s}
               class:on={app.settings.scale === s}
               onclick={() => app.saveSettings({ scale: s })}
+              title={`Set screen scale to ${s}%`}
             >
               {s}%
             </button>
@@ -93,6 +94,7 @@
               aria-checked={app.settings.theme === t.value}
               class:on={app.settings.theme === t.value}
               onclick={() => app.saveSettings({ theme: t.value })}
+              title={`Set theme to ${t.label}`}
             >
               {t.label}
             </button>
@@ -114,9 +116,16 @@
         <ul class="paths">
           {#each paths as p (p)}
             <li>
-              <span class="path" title={p}>{p}</span>
+              <span class="path">{p}</span>
               {#if p === app.defaultKubeconfigPath}<span class="pill">default</span>{/if}
-              <button class="mini" disabled={busy} onclick={() => run(() => app.removeKubeconfigPath(p))}>Remove</button>
+              <button
+                class="mini"
+                disabled={busy}
+                onclick={() => run(() => app.removeKubeconfigPath(p))}
+                title={`Remove ${p} from kubeconfig paths`}
+              >
+                Remove
+              </button>
             </li>
           {/each}
         </ul>
@@ -128,13 +137,19 @@
           bind:value={draft}
           onkeydown={(e) => e.key === "Enter" && addDraft()}
         />
-        <button onclick={addDraft} disabled={busy || !draft.trim()}>Add</button>
+        <button onclick={addDraft} disabled={busy || !draft.trim()} title="Add entered kubeconfig path">Add</button>
       </div>
       <div class="actions">
-        <button onclick={() => pick(false)} disabled={busy}>Add file…</button>
-        <button onclick={() => pick(true)} disabled={busy}>Add folder…</button>
+        <button onclick={() => pick(false)} disabled={busy} title="Browse and add a kubeconfig file">Add file…</button>
+        <button onclick={() => pick(true)} disabled={busy} title="Browse and add a folder of kubeconfig files">Add folder…</button>
         <span class="grow"></span>
-        <button onclick={() => run(() => app.resetKubeconfigPaths())} disabled={busy || isDefault}>Reset to default</button>
+        <button
+          onclick={() => run(() => app.resetKubeconfigPaths())}
+          disabled={busy || isDefault}
+          title="Restore the default kubeconfig path"
+        >
+          Reset to default
+        </button>
       </div>
     </section>
   </div>

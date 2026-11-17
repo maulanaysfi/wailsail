@@ -35,7 +35,7 @@
   {#if app.connectionError}
     <div class="banner error conn">
       <span>Could not connect to <strong>{app.context || "kubeconfig"}</strong>: {app.connectionError}</span>
-      <button onclick={() => app.selectContext(app.context)}>Retry</button>
+      <button onclick={() => app.selectContext(app.context)} title="Retry connecting to cluster">Retry</button>
     </div>
   {/if}
 
@@ -74,8 +74,12 @@
         <h3>{app.confirmRequest.title}</h3>
         <p>{app.confirmRequest.message}</p>
         <div class="row">
-          <button onclick={() => app.answerConfirm(false)}>Cancel</button>
-          <button class={app.confirmRequest.danger ? "danger" : "primary"} onclick={() => app.answerConfirm(true)}>
+          <button onclick={() => app.answerConfirm(false)} title="Cancel action (Esc)">Cancel</button>
+          <button
+            class={app.confirmRequest.danger ? "danger" : "primary"}
+            onclick={() => app.answerConfirm(true)}
+            title="Confirm and proceed"
+          >
             Confirm
           </button>
         </div>
@@ -87,7 +91,7 @@
     {#each app.toasts as t (t.id)}
       <div class={`toast ${t.tone}`} role="status">
         <span>{t.text}</span>
-        <button class="ghost" onclick={() => app.dismissToast(t.id)}>✕</button>
+        <button class="ghost" onclick={() => app.dismissToast(t.id)} title="Dismiss notification">✕</button>
       </div>
     {/each}
   </div>

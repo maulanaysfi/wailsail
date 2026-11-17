@@ -133,9 +133,11 @@
     </label>
     <label class="check"><input type="checkbox" bind:checked={previous} />Previous</label>
     <label class="check"><input type="checkbox" bind:checked={follow} />Follow</label>
-    <button onclick={() => (paused = !paused)}>{paused ? "Resume" : "Pause"}</button>
-    <button onclick={() => (lines = [])}>Clear</button>
-    <button onclick={() => restartNonce++}>Reconnect</button>
+    <button onclick={() => (paused = !paused)} title={paused ? "Resume live log stream" : "Pause live log stream"}>
+      {paused ? "Resume" : "Pause"}
+    </button>
+    <button onclick={() => (lines = [])} title="Clear displayed log lines">Clear</button>
+    <button onclick={() => restartNonce++} title="Reconnect container log stream">Reconnect</button>
     <input class="search" placeholder="Filter lines…" bind:value={search} />
     {#if ended}<span class="pill">EOF</span>{/if}
   </div>

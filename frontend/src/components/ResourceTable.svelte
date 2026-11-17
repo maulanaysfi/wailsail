@@ -310,7 +310,6 @@
           {#each displayCols as c (c.key)}
             <th
               data-col-key={c.key}
-              title={c.title}
               class:is-dragging={draggingKey === c.key}
               class:drop-before={dropTargetKey === c.key && !dropAfter}
               class:drop-after={dropTargetKey === c.key && dropAfter}
@@ -325,7 +324,6 @@
                 class:active={resizingKey === c.key}
                 role="separator"
                 aria-orientation="vertical"
-                title="Drag to resize column, double-click to reset"
                 onpointerdown={(e) => startColResize(e, c)}
                 ondblclick={(e) => resetColWidth(e, c)}
               ></span>
@@ -340,12 +338,16 @@
           <tr class:selected={isSelected(r)} onclick={() => select(r)}>
             {#each displayCols as c (c.key)}
               {@const v = c.get(r)}
-              <td class={c.status ? `tone-${toneFor(v)}` : ""} class:name-col={c.key === "c0" || c.key === "name"} title={v}>{v}</td>
+              <td class={c.status ? `tone-${toneFor(v)}` : ""} class:name-col={c.key === "c0" || c.key === "name"}>{v}</td>
             {/each}
             {#if isPod}
               <td class="actions">
-                <button class="mini" onclick={(e) => openPod("logs", r, e)}>Logs</button>
-                <button class="mini" onclick={(e) => openPod("shell", r, e)}>Shell</button>
+                <button class="mini" onclick={(e) => openPod("logs", r, e)} title={`Stream container logs for pod ${r.name}`}>
+                  Logs
+                </button>
+                <button class="mini" onclick={(e) => openPod("shell", r, e)} title={`Open interactive shell in pod ${r.name}`}>
+                  Shell
+                </button>
               </td>
             {/if}
           </tr>

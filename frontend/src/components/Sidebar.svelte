@@ -33,14 +33,19 @@
 
 {#snippet item(r: ResourceType)}
   <li>
-    <button class="item" class:active={isActive(r)} onclick={() => app.selectResource(r)} title={`${r.resource}.${r.group || "core"}/${r.version}`}>
+    <button
+      class="item"
+      class:active={isActive(r)}
+      onclick={() => app.selectResource(r)}
+      title={`Browse ${r.kind} (${r.resource}.${r.group || "core"}/${r.version})`}
+    >
       <span class="kind">{r.kind}</span>
       <span
         class="pin"
         class:on={app.isPinned(r)}
         role="button"
         tabindex="-1"
-        title={app.isPinned(r) ? "Unpin" : "Pin"}
+        title={app.isPinned(r) ? `Unpin ${r.kind}` : `Pin ${r.kind} to sidebar`}
         onclick={(e) => {
           e.stopPropagation();
           app.togglePin(r);
@@ -68,7 +73,11 @@
     {#each filtered as g (g.name)}
       <section>
         <h4>
-          <button class="group" onclick={() => (collapsed[g.name] = !collapsed[g.name])}>
+          <button
+            class="group"
+            onclick={() => (collapsed[g.name] = !collapsed[g.name])}
+            title={collapsed[g.name] ? `Expand ${g.name} group` : `Collapse ${g.name} group`}
+          >
             <span class="chev" class:closed={collapsed[g.name] && !query}>▾</span>{g.name}
           </button>
         </h4>

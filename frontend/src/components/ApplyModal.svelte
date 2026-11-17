@@ -27,13 +27,15 @@
   <div class="modal wide" role="dialog" aria-modal="true">
     <header>
       <h3>Apply YAML / JSON ({app.context}{app.namespace ? ` · ${app.namespace}` : ""})</h3>
-      <button class="ghost" onclick={() => (app.showApply = false)}>✕</button>
+      <button class="ghost" onclick={() => (app.showApply = false)} title="Close apply dialog (Esc)">✕</button>
     </header>
     {#if error}<div class="banner error">{error}</div>{/if}
     <textarea class="editor" spellcheck="false" bind:value={manifest}></textarea>
     <footer>
-      <button onclick={() => (app.showApply = false)}>Cancel</button>
-      <button class="primary" onclick={apply} disabled={busy || !manifest.trim()}>{busy ? "Applying…" : "Apply"}</button>
+      <button onclick={() => (app.showApply = false)} title="Cancel and close dialog (Esc)">Cancel</button>
+      <button class="primary" onclick={apply} disabled={busy || !manifest.trim()} title="Server-side apply manifest to cluster">
+        {busy ? "Applying…" : "Apply"}
+      </button>
     </footer>
   </div>
 </div>

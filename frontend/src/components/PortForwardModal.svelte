@@ -65,7 +65,7 @@
   <div class="modal" role="dialog" aria-modal="true">
     <header>
       <h3>{target ? `Port Forward · ${target.type.kind} ${target.name}` : "Port Forwards"}</h3>
-      <button class="ghost" onclick={close}>✕</button>
+      <button class="ghost" onclick={close} title="Close port forwards dialog (Esc)">✕</button>
     </header>
 
     {#if target}
@@ -85,7 +85,9 @@
           Local port <span class="hint">(0 = auto)</span>
           <input type="number" min="0" max="65535" bind:value={localPort} />
         </label>
-        <button class="primary" onclick={start} disabled={busy}>{busy ? "Starting…" : "Start"}</button>
+        <button class="primary" onclick={start} disabled={busy} title="Start local TCP port forward">
+          {busy ? "Starting…" : "Start"}
+        </button>
       </div>
     {/if}
 
@@ -104,8 +106,16 @@
               <td class="mono">127.0.0.1:{f.localPort}</td>
               <td>{f.kind}/{f.name}:{f.remotePort} <span class="hint">({f.namespace})</span></td>
               <td class="mono">{f.pod}:{f.podPort}</td>
-              <td class={f.status === "active" ? "tone-ok" : "tone-bad"} title={f.error ?? ""}>{f.status}</td>
-              <td><button class="mini danger" onclick={() => PortForward.Stop(f.id)}>Stop</button></td>
+              <td class={f.status === "active" ? "tone-ok" : "tone-bad"}>{f.status}</td>
+              <td>
+                <button
+                  class="mini danger"
+                  onclick={() => PortForward.Stop(f.id)}
+                  title={`Stop forwarding 127.0.0.1:${f.localPort} to ${f.kind}/${f.name}`}
+                >
+                  Stop
+                </button>
+              </td>
             </tr>
           {/each}
         </tbody>

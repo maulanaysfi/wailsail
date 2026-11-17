@@ -7,7 +7,7 @@
 </script>
 
 <header class="topbar">
-  <img class="logo" src="/icon.png" alt="wailsail" title="wailsail" width="24" height="24" />
+  <img class="logo" src="/icon.png" alt="wailsail" width="24" height="24" />
 
   <label class="field">
     <span>Context</span>
@@ -37,24 +37,38 @@
   </label>
 
   {#if app.serverVersion}
-    <span class="pill" title="Kubernetes server version">{app.serverVersion}</span>
+    <span class="pill">{app.serverVersion}</span>
   {/if}
 
   <div class="spacer"></div>
 
-  <button class="ghost" onclick={() => (app.showApply = true)} disabled={!app.context} title="Apply YAML">
+  <button
+    class="ghost"
+    onclick={() => (app.showApply = true)}
+    disabled={!app.context}
+    title="Apply YAML or JSON manifest to current cluster"
+  >
     + Apply
   </button>
-  <button class="ghost" onclick={() => (app.showForwards = true)} title="Port forwards">Forwards</button>
-  <button class="ghost" onclick={() => (app.dockOpen = !app.dockOpen)} disabled={app.dock.length === 0}>
+  <button class="ghost" onclick={() => (app.showForwards = true)} title="Manage active local port forwards">
+    Forwards
+  </button>
+  <button
+    class="ghost"
+    onclick={() => (app.dockOpen = !app.dockOpen)}
+    disabled={app.dock.length === 0}
+    title={app.dockOpen ? "Minimize bottom dock" : "Show bottom dock"}
+  >
     Dock{app.dock.length ? ` (${app.dock.length})` : ""}
   </button>
-  <button class="ghost" onclick={() => app.reload()} title="Reload kubeconfig">Reload</button>
+  <button class="ghost" onclick={() => app.reload()} title="Reload kubeconfig and refresh current resource view">
+    Reload
+  </button>
 
   <button
     class="ghost icon"
     onclick={() => app.cycleTheme()}
-    title={`Theme: ${themeLabel[theme]} (click for ${nextTheme[theme]})`}
+    title={`Theme: ${themeLabel[theme]} (click to switch to ${nextTheme[theme]})`}
     aria-label={`Theme: ${themeLabel[theme]}`}
   >
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -69,7 +83,7 @@
       {/if}
     </svg>
   </button>
-  <button class="ghost icon" onclick={() => (app.showSettings = true)} title="Settings" aria-label="Settings">
+  <button class="ghost icon" onclick={() => (app.showSettings = true)} title="Open application settings" aria-label="Settings">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <circle cx="12" cy="12" r="3" />
       <path

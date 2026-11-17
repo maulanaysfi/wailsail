@@ -127,7 +127,7 @@
         <option value="/bin/ash">/bin/ash</option>
       </select>
     </label>
-    <button onclick={() => reconnectNonce++}>Reconnect</button>
+    <button onclick={() => reconnectNonce++} title="Reconnect interactive shell session">Reconnect</button>
     {#if exited}<span class="pill">exited</span>{/if}
   </div>
   {#if error}<div class="banner error">{error}</div>{/if}
