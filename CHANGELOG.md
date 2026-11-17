@@ -4,9 +4,18 @@ All notable changes to **`wailsail`** are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.1.1-beta] - 2026-11-17
 
 ### Added
+- **Cluster Connection Health Indicator & Version Tag**:
+  - Added connection status dot beside the cluster version pill in `TopBar` (`green` when connected, `yellow` when not replying for 5s, `red` when timed out for 30s or disconnected).
+  - Added application version pill (`v0.1.1 (beta)`) in the `SettingsModal` header.
+- **Persistent Dock Sessions & Tab Redirect**:
+  - Minimizing and reopening `BottomDock` now keeps active container shell and log sessions alive until their tab is explicitly closed.
+  - Clicking `Logs` or `Shell` for a pod/container that already has an open dock tab now focuses and un-minimizes the existing tab instead of opening duplicates.
+- **Sidebar Accordion Ordering, Default Collapse & CRD Separator**:
+  - Ordered native sidebar sections as `Cluster`, `Workloads`, `Network`, `Storage`, `Config`, and `Access`, with only the first 5 expanded by default and all other groups collapsed by default.
+  - Added a `CRDs` divider separating built-in Kubernetes resource groups from custom resource definition groups (`HTTPRoute` and `Gateway` moved out of hardcoded `Network` into dynamic CRD groups).
 - **Object Overview & Events in DetailDrawer**:
   - Added **Overview** and **YAML** tabs when inspecting a selected resource (`GetDetail` and `ObjectEvents` on `kube.Service`).
   - Displays structured **Metadata** (name, namespace, API version/kind, creation age & timestamp, UID, resourceVersion/generation, ownerReferences, finalizers, labels, and annotations), resource-specific **Specification & status** summaries, **Containers**, **Conditions**, and related Kubernetes **Events**.
@@ -41,6 +50,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **DetailDrawer Ledger Layout**: Redesigned `DetailDrawer` sections and `Events` into flat horizontal ruled sections and a structured tabular ledger (`Reason`, `Message`, `Age`) without nested cards or decorative left-border stripes.
 - **TopBar Controls & Branding**:
   - Removed the `wailsail` text label from the TopBar while keeping the app icon.
+  - Removed the `+` prefix from the `Apply` button and changed the `Reload` button to an SVG refresh icon.
   - Replaced the text theme toggle with SVG icons (System monitor, Light sun, Dark moon) and added a Settings gear icon button.
 - **Hover Tooltips**: Removed hover `title` tooltips from non-interactive elements (table cells, column headers, pills, chips, and static text) and added descriptive action tooltips to clickable buttons (and container resource usage progress bars).
 

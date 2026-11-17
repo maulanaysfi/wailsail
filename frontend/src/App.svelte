@@ -52,7 +52,7 @@
           <DetailDrawer sel={app.selection} />
         {/if}
       </div>
-      {#if app.dockOpen && app.dock.length > 0}
+      {#if app.dock.length > 0}
         <BottomDock />
       {/if}
     </div>

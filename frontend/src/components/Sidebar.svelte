@@ -1,13 +1,22 @@
 <script lang="ts">
   import { app } from "../lib/store.svelte";
-  import { groupResources, resourceKey } from "../lib/resources";
+  import { defaultExpandedGroups, groupResources, resourceKey } from "../lib/resources";
   import type { ResourceType } from "../lib/api";
 
   let query = $state("");
-  let collapsed = $state<Record<string, boolean>>({});
+  let toggled = $state<Record<string, boolean>>({});
 
   const groups = $derived(groupResources(app.resources));
   const pinned = $derived(app.resources.filter((r) => app.isPinned(r)));
+
+  function isCollapsed(name: string): boolean {
+    if (name in toggled) return toggled[name];
+    return !defaultExpandedGroups.has(name);
+  }
+
+  function toggleGroup(name: string) {
+    toggled[name] = !isCollapsed(name);
+  }
 
   function matches(r: ResourceType, q: string) {
     if (!q) return true;
@@ -75,18 +84,24 @@
         </ul>
       </section>
     {/if}
-    {#each filtered as g (g.name)}
+    {#each filtered as g, i (g.name)}
+      {#if g.crd && (i === 0 || !filtered[i - 1].crd)}
+        <div class="crd-separator" role="separator">
+          <span>CRDs</span>
+        </div>
+      {/if}
+      {@const closed = isCollapsed(g.name)}
       <section>
         <h4>
           <button
             class="group"
-            onclick={() => (collapsed[g.name] = !collapsed[g.name])}
-            title={collapsed[g.name] ? `Expand ${g.name} group` : `Collapse ${g.name} group`}
+            onclick={() => toggleGroup(g.name)}
+            title={closed ? `Expand ${g.name} group` : `Collapse ${g.name} group`}
           >
-            <span class="chev" class:closed={collapsed[g.name] && !query}>▾</span>{g.name}
+            <span class="chev" class:closed={closed && !query}>▾</span>{g.name}
           </button>
         </h4>
-        {#if !collapsed[g.name] || query}
+        {#if !closed || query}
           <ul>
             {#each g.items as r (resourceKey(r))}{@render item(r)}{/each}
           </ul>
@@ -141,6 +156,20 @@
     overflow-y: auto;
     flex: 1;
     padding-bottom: var(--space-3);
+  }
+  .crd-separator {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: var(--space-2) var(--space-3) var(--space-1);
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .crd-separator::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--border);
   }
   section {
     margin-bottom: var(--space-1);

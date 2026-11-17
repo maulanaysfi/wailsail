@@ -19,7 +19,7 @@
   }
 </script>
 
-<section class="dock" style={`height:${height}px`}>
+<section class="dock" class:minimized={!app.dockOpen} style={`height:${height}px`}>
   <div class="resizer" onpointerdown={startResize} role="separator" aria-orientation="horizontal"></div>
   <header class="tabs">
     {#each app.dock as t (t.id)}
@@ -54,6 +54,9 @@
     border-top: 1px solid var(--border);
     background: var(--panel);
     min-height: 0;
+  }
+  .dock.minimized {
+    display: none;
   }
   .resizer {
     position: absolute;

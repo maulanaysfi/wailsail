@@ -48,12 +48,14 @@ const defaultSettings: SettingsData = {
 };
 
 export const scaleOptions = [50, 75, 100, 125, 150] as const;
+export const APP_VERSION = "v0.1.1 (beta)";
 
 class AppState {
   contexts = $state<ContextInfo[]>([]);
   context = $state("");
   serverVersion = $state("");
   connectionError = $state("");
+  clusterStatus = $state<"connected" | "slow" | "disconnected">("disconnected");
   namespaces = $state<string[]>([]);
   namespace = $state(""); // "" means all namespaces
   resources = $state<ResourceType[]>([]);
@@ -74,9 +76,18 @@ class AppState {
   now = $state(Date.now());
 
   #toastSeq = 0;
+  #lastReplyAt = 0;
+  #unansweredSince = 0;
+  #probing = false;
+  #ticks = 0;
 
   async init() {
-    setInterval(() => (this.now = Date.now()), 1000);
+    setInterval(() => {
+      this.now = Date.now();
+      this.#ticks++;
+      if (this.#ticks % 5 === 0) this.#probeCluster();
+      this.#refreshClusterStatus();
+    }, 1000);
     try {
       this.settings = { ...defaultSettings, ...((await Settings.Get()) ?? {}) };
     } catch (e) {
@@ -143,6 +154,9 @@ class AppState {
     }
 
     this.resourcesLoading = true;
+    this.#unansweredSince = Date.now();
+    this.#lastReplyAt = 0;
+    this.#refreshClusterStatus();
     try {
       const [version, resources, namespaces] = await Promise.all([
         Kube.ServerVersion(name),
@@ -150,6 +164,8 @@ class AppState {
         Kube.Namespaces(name),
       ]);
       if (this.context !== name) return; // switched meanwhile
+      this.#lastReplyAt = Date.now();
+      this.#unansweredSince = 0;
       this.serverVersion = version;
       this.resources = resources ?? [];
       this.namespaces = namespaces ?? [];
@@ -162,8 +178,52 @@ class AppState {
     } catch (e) {
       if (this.context === name) this.connectionError = errorMessage(e);
     } finally {
-      if (this.context === name) this.resourcesLoading = false;
+      if (this.context === name) {
+        this.resourcesLoading = false;
+        this.#refreshClusterStatus();
+      }
     }
+  }
+
+  #probeCluster() {
+    const ctx = this.context;
+    if (!ctx || this.#probing || this.resourcesLoading) return;
+    this.#probing = true;
+    if (this.#unansweredSince === 0) this.#unansweredSince = Date.now();
+    Kube.ServerVersion(ctx)
+      .then((v) => {
+        if (this.context !== ctx) return;
+        this.#lastReplyAt = Date.now();
+        this.#unansweredSince = 0;
+        if (v) this.serverVersion = v;
+        this.connectionError = "";
+      })
+      .catch(() => {
+        // Keep #unansweredSince running so 5s -> yellow and 30s -> red transitions occur.
+      })
+      .finally(() => {
+        this.#probing = false;
+        this.#refreshClusterStatus();
+      });
+  }
+
+  #refreshClusterStatus() {
+    if (!this.context || this.connectionError) {
+      this.clusterStatus = "disconnected";
+      return;
+    }
+    if (this.#unansweredSince > 0) {
+      const elapsed = Date.now() - this.#unansweredSince;
+      if (elapsed >= 30_000) {
+        this.clusterStatus = "disconnected";
+        return;
+      }
+      if (elapsed >= 5_000) {
+        this.clusterStatus = "slow";
+        return;
+      }
+    }
+    this.clusterStatus = this.#lastReplyAt > 0 ? "connected" : "slow";
   }
 
   selectNamespace(ns: string) {
@@ -295,6 +355,19 @@ class AppState {
   }
 
   openDock(tab: Omit<DockTab, "id">) {
+    const existing = this.dock.find(
+      (t) =>
+        t.kind === tab.kind &&
+        t.context === tab.context &&
+        t.namespace === tab.namespace &&
+        t.pod === tab.pod &&
+        (!tab.container || !t.container || t.container === tab.container),
+    );
+    if (existing) {
+      this.activeDock = existing.id;
+      this.dockOpen = true;
+      return;
+    }
     const id = `${tab.kind}-${Date.now().toString(36)}`;
     this.dock = [...this.dock, { ...tab, id } as DockTab];
     this.activeDock = id;

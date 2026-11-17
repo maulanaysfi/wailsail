@@ -3,10 +3,23 @@ import type { ResourceType } from "./api";
 export interface ResourceGroup {
   name: string;
   items: ResourceType[];
+  crd?: boolean;
 }
 
-// Well-known kinds grouped into sections, keyed by "group/kind".
+// Well-known native kinds grouped into sections, keyed by "group/kind".
 const sections: { name: string; kinds: string[] }[] = [
+  {
+    name: "Cluster",
+    kinds: [
+      "/Node",
+      "/Namespace",
+      "/Event",
+      "apiextensions.k8s.io/CustomResourceDefinition",
+      "admissionregistration.k8s.io/ValidatingWebhookConfiguration",
+      "admissionregistration.k8s.io/MutatingWebhookConfiguration",
+      "apiregistration.k8s.io/APIService",
+    ],
+  },
   {
     name: "Workloads",
     kinds: [
@@ -27,8 +40,15 @@ const sections: { name: string; kinds: string[] }[] = [
       "networking.k8s.io/IngressClass",
       "networking.k8s.io/NetworkPolicy",
       "discovery.k8s.io/EndpointSlice",
-      "gateway.networking.k8s.io/Gateway",
-      "gateway.networking.k8s.io/HTTPRoute",
+    ],
+  },
+  {
+    name: "Storage",
+    kinds: [
+      "/PersistentVolumeClaim",
+      "/PersistentVolume",
+      "storage.k8s.io/StorageClass",
+      "storage.k8s.io/VolumeAttachment",
     ],
   },
   {
@@ -44,15 +64,6 @@ const sections: { name: string; kinds: string[] }[] = [
     ],
   },
   {
-    name: "Storage",
-    kinds: [
-      "/PersistentVolumeClaim",
-      "/PersistentVolume",
-      "storage.k8s.io/StorageClass",
-      "storage.k8s.io/VolumeAttachment",
-    ],
-  },
-  {
     name: "Access",
     kinds: [
       "/ServiceAccount",
@@ -62,19 +73,37 @@ const sections: { name: string; kinds: string[] }[] = [
       "rbac.authorization.k8s.io/ClusterRoleBinding",
     ],
   },
-  {
-    name: "Cluster",
-    kinds: [
-      "/Node",
-      "/Namespace",
-      "/Event",
-      "apiextensions.k8s.io/CustomResourceDefinition",
-      "admissionregistration.k8s.io/ValidatingWebhookConfiguration",
-      "admissionregistration.k8s.io/MutatingWebhookConfiguration",
-      "apiregistration.k8s.io/APIService",
-    ],
-  },
 ];
+
+export const defaultExpandedGroups = new Set(["Cluster", "Workloads", "Network", "Storage", "Config"]);
+
+// Built-in Kubernetes API groups (non-CRD).
+const nativeGroups = new Set([
+  "",
+  "core",
+  "apps",
+  "batch",
+  "autoscaling",
+  "policy",
+  "networking.k8s.io",
+  "discovery.k8s.io",
+  "storage.k8s.io",
+  "rbac.authorization.k8s.io",
+  "scheduling.k8s.io",
+  "apiextensions.k8s.io",
+  "admissionregistration.k8s.io",
+  "apiregistration.k8s.io",
+  "coordination.k8s.io",
+  "node.k8s.io",
+  "certificates.k8s.io",
+  "events.k8s.io",
+  "flowcontrol.apiserver.k8s.io",
+  "authentication.k8s.io",
+  "authorization.k8s.io",
+  "resource.k8s.io",
+  "internal.apiserver.k8s.io",
+  "storagemigration.k8s.io",
+]);
 
 // Kinds hidden from the sidebar (deprecated duplicates / noise).
 const hidden = new Set(["/Endpoints", "/ComponentStatus", "events.k8s.io/Event", "/Binding"]);
@@ -87,7 +116,7 @@ export function kindKey(r: { group: string; kind: string }): string {
   return `${r.group}/${r.kind}`;
 }
 
-/** Arrange discovered resources into curated sections plus one per CRD group. */
+/** Arrange discovered resources into curated native sections plus CRD groups. */
 export function groupResources(all: ResourceType[]): ResourceGroup[] {
   const byKind = new Map(all.map((r) => [kindKey(r), r]));
   const used = new Set<string>();
@@ -101,18 +130,23 @@ export function groupResources(all: ResourceType[]): ResourceGroup[] {
         used.add(k);
       }
     }
-    if (items.length) groups.push({ name: s.name, items });
+    if (items.length) groups.push({ name: s.name, items, crd: false });
   }
-  const rest = new Map<string, ResourceType[]>();
+  const nativeRest = new Map<string, ResourceType[]>();
+  const crdRest = new Map<string, ResourceType[]>();
   for (const r of all) {
     const k = kindKey(r);
     if (used.has(k) || hidden.has(k)) continue;
     const g = r.group || "core";
-    if (!rest.has(g)) rest.set(g, []);
-    rest.get(g)!.push(r);
+    const target = nativeGroups.has(r.group) ? nativeRest : crdRest;
+    if (!target.has(g)) target.set(g, []);
+    target.get(g)!.push(r);
   }
-  for (const g of [...rest.keys()].sort()) {
-    groups.push({ name: g, items: rest.get(g)!.sort((a, b) => a.kind.localeCompare(b.kind)) });
+  for (const g of [...nativeRest.keys()].sort()) {
+    groups.push({ name: g, items: nativeRest.get(g)!.sort((a, b) => a.kind.localeCompare(b.kind)), crd: false });
+  }
+  for (const g of [...crdRest.keys()].sort()) {
+    groups.push({ name: g, items: crdRest.get(g)!.sort((a, b) => a.kind.localeCompare(b.kind)), crd: true });
   }
   return groups;
 }

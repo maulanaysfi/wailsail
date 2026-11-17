@@ -36,8 +36,13 @@
     </select>
   </label>
 
-  {#if app.serverVersion}
-    <span class="pill">{app.serverVersion}</span>
+  {#if app.context}
+    <span class="cluster-pill">
+      <span class={`conn-dot ${app.clusterStatus}`}></span>
+      {#if app.serverVersion}
+        <span class="pill">{app.serverVersion}</span>
+      {/if}
+    </span>
   {/if}
 
   <div class="spacer"></div>
@@ -48,7 +53,7 @@
     disabled={!app.context}
     title="Apply YAML or JSON manifest to current cluster"
   >
-    + Apply
+    Apply
   </button>
   <button class="ghost" onclick={() => (app.showForwards = true)} title="Manage active local port forwards">
     Forwards
@@ -61,8 +66,17 @@
   >
     Dock{app.dock.length ? ` (${app.dock.length})` : ""}
   </button>
-  <button class="ghost" onclick={() => app.reload()} title="Reload kubeconfig and refresh current resource view">
-    Reload
+  <button
+    class="ghost icon"
+    onclick={() => app.reload()}
+    title="Reload kubeconfig and refresh current resource view"
+    aria-label="Reload"
+  >
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <polyline points="23 4 23 10 17 10" />
+      <polyline points="1 20 1 14 7 14" />
+      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+    </svg>
   </button>
 
   <button
@@ -122,6 +136,26 @@
     min-width: 184px;
     max-width: 280px;
     height: var(--control-h);
+  }
+  .cluster-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .conn-dot {
+    width: var(--space-2);
+    height: var(--space-2);
+    border-radius: 999px;
+    background: var(--muted);
+  }
+  .conn-dot.connected {
+    background: var(--ok);
+  }
+  .conn-dot.slow {
+    background: var(--warn);
+  }
+  .conn-dot.disconnected {
+    background: var(--bad);
   }
   .topbar > button {
     height: var(--control-h);

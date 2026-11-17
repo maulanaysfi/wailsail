@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Dialogs } from "@wailsio/runtime";
   import { errorMessage } from "../lib/api";
-  import { app, scaleOptions } from "../lib/store.svelte";
+  import { APP_VERSION, app, scaleOptions } from "../lib/store.svelte";
 
   let draft = $state("");
   let busy = $state(false);
@@ -63,7 +63,10 @@
 <div class="backdrop" role="presentation" onclick={(e) => e.target === e.currentTarget && close()}>
   <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="settings-title">
     <header>
-      <h3 id="settings-title">Settings</h3>
+      <div class="head-title">
+        <h3 id="settings-title">Settings</h3>
+        <span class="pill">{APP_VERSION}</span>
+      </div>
       <button class="ghost" onclick={close} title="Close settings (Esc)">✕</button>
     </header>
 
@@ -156,6 +159,11 @@
 </div>
 
 <style>
+  .head-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
   section + section {
     margin-top: var(--space-4);
     padding-top: var(--space-3);
