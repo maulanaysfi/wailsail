@@ -22,6 +22,7 @@
 ```text
 .
 ├── AGENTS.md               # Project rules, architecture, and service contracts
+├── CHANGELOG.md            # Release history and notable changes
 ├── README.md               # User-facing documentation
 ├── Taskfile.yml            # Wails v3 root build/dev/package task runner
 ├── go.mod / go.sum         # Go module `wailsail`
@@ -83,7 +84,7 @@ flowchart LR
   - `APIResources(contextName string) ([]ResourceType, error)`
   - `Watch(contextName string, ref ResourceRef, namespace, streamID string) (string, error)` — requests `meta.k8s.io/v1` `Table` rows, coalesces updates every 150ms, relists on `410 Gone`, emits `WatchEvent` (`reset`, `columns`, `upserts`, `deletes`, `error`)
   - `StopWatch(streamID string)`
-  - `GetDetail(contextName string, ref ResourceRef, namespace, name string) (ObjectDetail, error)` — returns structured object, YAML without `managedFields`, and related Kubernetes events
+  - `GetDetail(contextName string, ref ResourceRef, namespace, name string) (ObjectDetail, error)` — returns structured object, YAML without `managedFields`, related Kubernetes events, and live container CPU/memory usage (`ContainerMetrics` via `metrics.k8s.io/v1beta1`)
   - `ObjectEvents(contextName, kind, namespace, name string) ([]EventInfo, error)`
   - `GetYAML(contextName string, ref ResourceRef, namespace, name string) (string, error)`
   - `Apply(contextName, manifest, defaultNamespace string) ([]ApplyResult, error)` — multi-document YAML/JSON + `List` expansion via Server-Side Apply (`fieldManager: "wailsail"`)
@@ -111,6 +112,9 @@ flowchart LR
 ### Frontend conventions
 - Font: bundled Google Sans Flex (`frontend/public/fonts/`, OFL) via `--sans`.
 - Spacing follows an 8-point grid using `--space-1`..`--space-6` (4/8/16/24/32/40px) from `frontend/public/style.css`.
+- Resource table shows wide columns by default with static (`table-layout: fixed`), draggable (reorderable), and resizable columns; cell text is single-line clipped (`text-overflow: clip`).
+- Container resource meters in `DetailDrawer` use rounded tracks (`--track`) with a white vertical request marker (`--mark-request`, at `request/limit` or `25%` when no limit is set), threshold bar colors (`<80%` green, `80%–94.99%` yellow, `>=95%` red), and plain-text fallback when neither request nor limit is defined.
+- Hover tooltips (`title`) are used only on clickable `<button>` elements (describing the button's action) and container resource progress bars (`Used / Request / Limit`).
 
 ---
 
