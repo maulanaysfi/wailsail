@@ -15,6 +15,7 @@ export type {
   ApplyResult,
   ObjectDetail,
   EventInfo,
+  ContainerMetrics,
 } from "../../bindings/wailsail/internal/kube";
 export type { Forward, Request as ForwardRequest } from "../../bindings/wailsail/internal/portforward";
 export type { Settings as SettingsData } from "../../bindings/wailsail/internal/settings";

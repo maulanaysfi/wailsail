@@ -54,7 +54,7 @@ export function Delete(contextName: string, ref: $models.ResourceRef, $namespace
 
 /**
  * GetDetail fetches a resource's structured representation, YAML (without
- * managedFields), and related cluster events.
+ * managedFields), related cluster events, and container resource usage.
  */
 export function GetDetail(contextName: string, ref: $models.ResourceRef, $namespace: string, name: string): $CancellablePromise<$models.ObjectDetail> {
     return $Call.ByID(1754770179, contextName, ref, $namespace, name);

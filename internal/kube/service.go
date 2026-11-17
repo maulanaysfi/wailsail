@@ -13,6 +13,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/fields"
@@ -257,16 +258,23 @@ type EventInfo struct {
 	LastSeen  string `json:"lastSeen"`  // RFC3339 timestamp
 }
 
-// ObjectDetail bundles the structured object, its YAML representation, and
-// related Kubernetes events for the detail drawer.
+// ContainerMetrics holds parsed live CPU and memory usage for a container.
+type ContainerMetrics struct {
+	CPUMilli    int64 `json:"cpuMilli"`    // millicores (1000m = 1 core)
+	MemoryBytes int64 `json:"memoryBytes"` // bytes
+}
+
+// ObjectDetail bundles the structured object, its YAML representation,
+// related Kubernetes events, and live container metrics for the detail drawer.
 type ObjectDetail struct {
-	Object map[string]any `json:"object"`
-	YAML   string         `json:"yaml"`
-	Events []EventInfo    `json:"events"`
+	Object  map[string]any              `json:"object"`
+	YAML    string                      `json:"yaml"`
+	Events  []EventInfo                 `json:"events"`
+	Metrics map[string]ContainerMetrics `json:"metrics"`
 }
 
 // GetDetail fetches a resource's structured representation, YAML (without
-// managedFields), and related cluster events.
+// managedFields), related cluster events, and container resource usage.
 func (s *Service) GetDetail(contextName string, ref ResourceRef, namespace, name string) (ObjectDetail, error) {
 	c, err := s.mgr.For(contextName)
 	if err != nil {
@@ -283,11 +291,107 @@ func (s *Service) GetDetail(contextName string, ref ResourceRef, namespace, name
 		return ObjectDetail{}, err
 	}
 	evs, _ := s.listObjectEvents(c, ref.Kind, namespace, name, string(obj.GetUID()))
+	metrics := s.fetchObjectMetrics(c, ref.Kind, namespace, name, clean.Object)
 	return ObjectDetail{
-		Object: clean.Object,
-		YAML:   string(b),
-		Events: evs,
+		Object:  clean.Object,
+		YAML:    string(b),
+		Events:  evs,
+		Metrics: metrics,
 	}, nil
+}
+
+type podMetricsPayload struct {
+	Containers []struct {
+		Name  string `json:"name"`
+		Usage struct {
+			CPU    string `json:"cpu"`
+			Memory string `json:"memory"`
+		} `json:"usage"`
+	} `json:"containers"`
+}
+
+type podMetricsListPayload struct {
+	Items []podMetricsPayload `json:"items"`
+}
+
+func (s *Service) fetchObjectMetrics(c *Clients, kind, namespace, name string, obj map[string]any) map[string]ContainerMetrics {
+	if namespace == "" {
+		return nil
+	}
+	if kind == "Pod" {
+		raw, err := c.Typed.CoreV1().RESTClient().Get().
+			AbsPath("/apis/metrics.k8s.io/v1beta1/namespaces", namespace, "pods", name).
+			DoRaw(s.baseCtx)
+		if err != nil {
+			return nil
+		}
+		return parsePodMetricsJSON(raw)
+	}
+	// For workloads (Deployment, StatefulSet, DaemonSet, ReplicaSet), aggregate matching pod metrics.
+	matchLabels, _, _ := unstructured.NestedStringMap(obj, "spec", "selector", "matchLabels")
+	if len(matchLabels) == 0 {
+		return nil
+	}
+	sel := fields.SelectorFromSet(fields.Set(matchLabels)).String()
+	raw, err := c.Typed.CoreV1().RESTClient().Get().
+		AbsPath("/apis/metrics.k8s.io/v1beta1/namespaces", namespace, "pods").
+		Param("labelSelector", sel).
+		DoRaw(s.baseCtx)
+	if err != nil {
+		return nil
+	}
+	return parsePodMetricsListJSON(raw)
+}
+
+func parsePodMetricsJSON(raw []byte) map[string]ContainerMetrics {
+	var pm podMetricsPayload
+	if err := json.Unmarshal(raw, &pm); err != nil || len(pm.Containers) == 0 {
+		return nil
+	}
+	out := make(map[string]ContainerMetrics, len(pm.Containers))
+	for _, ct := range pm.Containers {
+		out[ct.Name] = parseContainerUsage(ct.Usage.CPU, ct.Usage.Memory)
+	}
+	return out
+}
+
+func parsePodMetricsListJSON(raw []byte) map[string]ContainerMetrics {
+	var list podMetricsListPayload
+	if err := json.Unmarshal(raw, &list); err != nil || len(list.Items) == 0 {
+		return nil
+	}
+	totals := map[string]ContainerMetrics{}
+	counts := map[string]int64{}
+	for _, item := range list.Items {
+		for _, ct := range item.Containers {
+			u := parseContainerUsage(ct.Usage.CPU, ct.Usage.Memory)
+			cur := totals[ct.Name]
+			cur.CPUMilli += u.CPUMilli
+			cur.MemoryBytes += u.MemoryBytes
+			totals[ct.Name] = cur
+			counts[ct.Name]++
+		}
+	}
+	for name, tot := range totals {
+		if n := counts[name]; n > 1 {
+			totals[name] = ContainerMetrics{
+				CPUMilli:    tot.CPUMilli / n,
+				MemoryBytes: tot.MemoryBytes / n,
+			}
+		}
+	}
+	return totals
+}
+
+func parseContainerUsage(cpuStr, memStr string) ContainerMetrics {
+	var m ContainerMetrics
+	if q, err := resource.ParseQuantity(cpuStr); err == nil {
+		m.CPUMilli = q.MilliValue()
+	}
+	if q, err := resource.ParseQuantity(memStr); err == nil {
+		m.MemoryBytes = q.Value()
+	}
+	return m
 }
 
 // ObjectEvents returns Kubernetes events involving the specified object.

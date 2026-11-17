@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { Kube, errorMessage, type EventInfo } from "../lib/api";
+  import { Kube, errorMessage, type ContainerMetrics, type EventInfo } from "../lib/api";
   import { app, cssZoom, refOf, type Selection } from "../lib/store.svelte";
-  import { age, toneFor } from "../lib/format";
+  import { age, buildResourceMeter, toneFor, type ResourceMeter } from "../lib/format";
   import { kindKey, restartableKinds, scalableKinds } from "../lib/resources";
 
   let { sel }: { sel: Selection } = $props();
@@ -9,6 +9,7 @@
   let tab = $state<"overview" | "yaml">("overview");
   let obj = $state<Record<string, any> | null>(null);
   let events = $state<EventInfo[]>([]);
+  let metrics = $state<Record<string, ContainerMetrics>>({});
   let yaml = $state("");
   let draft = $state("");
   let editing = $state(false);
@@ -31,6 +32,7 @@
       const detail = await Kube.GetDetail(app.context, refOf(sel.type), sel.namespace, sel.name);
       obj = (detail.object as Record<string, any>) ?? null;
       events = detail.events ?? [];
+      metrics = (detail.metrics as Record<string, ContainerMetrics>) ?? {};
       yaml = detail.yaml ?? "";
       if (!editing) draft = yaml;
     } catch (e) {
@@ -195,32 +197,32 @@
       add("Strategy", spec.strategy?.type ?? spec.updateStrategy?.type);
       if (spec.strategy?.rollingUpdate) {
         const ru = spec.strategy.rollingUpdate;
-        add("Rolling Update", `maxSurge=${ru.maxSurge ?? "—"}, maxUnavailable=${ru.maxUnavailable ?? "—"}`, { mono: true });
+        add("Rolling update", `maxSurge=${ru.maxSurge ?? "—"}, maxUnavailable=${ru.maxUnavailable ?? "—"}`, { mono: true });
       }
-      add("Service Name", spec.serviceName, { mono: true });
-      add("Pod Management", spec.podManagementPolicy);
-      add("Min Ready Seconds", spec.minReadySeconds);
-      add("Revision History Limit", spec.revisionHistoryLimit);
+      add("Service name", spec.serviceName, { mono: true });
+      add("Pod management", spec.podManagementPolicy);
+      add("Min ready seconds", spec.minReadySeconds);
+      add("Revision history limit", spec.revisionHistoryLimit);
     } else if (kind === "DaemonSet") {
       const desired = status.desiredNumberScheduled ?? 0;
       const current = status.currentNumberScheduled ?? 0;
       const ready = status.numberReady ?? 0;
       const updated = status.updatedNumberScheduled ?? 0;
       const available = status.numberAvailable ?? 0;
-      add("Pods Scheduled", `${ready}/${desired} ready (${current} current, ${updated} updated, ${available} available)`, {
+      add("Pods scheduled", `${ready}/${desired} ready (${current} current, ${updated} updated, ${available} available)`, {
         tone: ready === desired && desired > 0 ? "ok" : "warn",
       });
-      add("Update Strategy", spec.updateStrategy?.type);
+      add("Update strategy", spec.updateStrategy?.type);
     } else if (kind === "Pod") {
       add("Phase", status.phase, { tone: toneFor(status.phase ?? "") });
       add("Reason", status.reason);
-      add("QoS Class", status.qosClass);
+      add("QoS class", status.qosClass);
       add("Node", spec.nodeName, { mono: true });
       add("Pod IP", status.podIP, { mono: true });
       add("Host IP", status.hostIP, { mono: true });
-      add("Service Account", spec.serviceAccountName, { mono: true });
-      add("Restart Policy", spec.restartPolicy);
-      add("Priority Class", spec.priorityClassName);
+      add("Service account", spec.serviceAccountName, { mono: true });
+      add("Restart policy", spec.restartPolicy);
+      add("Priority class", spec.priorityClassName);
     } else if (kind === "Service") {
       add("Type", spec.type);
       add("Cluster IP", spec.clusterIP, { mono: true });
@@ -230,29 +232,29 @@
       const lbIng = status.loadBalancer?.ingress;
       if (Array.isArray(lbIng) && lbIng.length) {
         add(
-          "LoadBalancer Ingress",
+          "LoadBalancer ingress",
           lbIng.map((i: any) => i.ip || i.hostname).filter(Boolean).join(", "),
           { mono: true },
         );
       }
-      add("Session Affinity", spec.sessionAffinity);
-      add("External Traffic Policy", spec.externalTrafficPolicy);
+      add("Session affinity", spec.sessionAffinity);
+      add("External traffic policy", spec.externalTrafficPolicy);
       if (Array.isArray(spec.ports) && spec.ports.length) {
         add(
           "Ports",
           spec.ports
-            .map((p: any) => `${p.name ? p.name + ":" : ""}${p.port}${p.nodePort ? ":" + p.nodePort : ""}→${p.targetPort ?? p.port}/${p.protocol ?? "TCP"}`)
+            .map((p: any) => `${p.name ? p.name + ":" : ""}${p.port}${p.nodePort ? ":" + p.nodePort : ""} -> ${p.targetPort ?? p.port}/${p.protocol ?? "TCP"}`)
             .join(", "),
           { mono: true },
         );
       }
     } else if (kind === "Ingress") {
-      add("Ingress Class", spec.ingressClassName, { mono: true });
+      add("Ingress class", spec.ingressClassName, { mono: true });
       if (Array.isArray(spec.rules) && spec.rules.length) {
         const rules = spec.rules.flatMap((r: any) =>
           (r.http?.paths ?? []).map(
             (p: any) =>
-              `${r.host || "*"}${p.path || "/"} → ${p.backend?.service?.name ?? "?"}:${p.backend?.service?.port?.number ?? p.backend?.service?.port?.name ?? "?"}`,
+              `${r.host || "*"}${p.path || "/"} -> ${p.backend?.service?.name ?? "?"}:${p.backend?.service?.port?.number ?? p.backend?.service?.port?.name ?? "?"}`,
           ),
         );
         add("Rules", rules.join("; "), { mono: true });
@@ -260,29 +262,29 @@
     } else if (kind === "Job" || kind === "CronJob") {
       add("Schedule", spec.schedule, { mono: true });
       if (spec.suspend !== undefined) add("Suspend", String(spec.suspend));
-      add("Concurrency Policy", spec.concurrencyPolicy);
+      add("Concurrency policy", spec.concurrencyPolicy);
       add("Completions", spec.completions);
       add("Parallelism", spec.parallelism);
-      add("Backoff Limit", spec.backoffLimit);
+      add("Backoff limit", spec.backoffLimit);
       if (status.active !== undefined || status.succeeded !== undefined || status.failed !== undefined) {
-        add("Job Status", `active=${status.active ?? 0}, succeeded=${status.succeeded ?? 0}, failed=${status.failed ?? 0}`);
+        add("Job status", `active=${status.active ?? 0}, succeeded=${status.succeeded ?? 0}, failed=${status.failed ?? 0}`);
       }
-      add("Last Schedule", status.lastScheduleTime);
+      add("Last schedule", status.lastScheduleTime);
     } else if (kind === "PersistentVolumeClaim" || kind === "PersistentVolume") {
       add("Phase", status.phase, { tone: toneFor(status.phase ?? "") });
-      add("Storage Class", spec.storageClassName, { mono: true });
-      if (Array.isArray(spec.accessModes)) add("Access Modes", spec.accessModes.join(", "));
+      add("Storage class", spec.storageClassName, { mono: true });
+      if (Array.isArray(spec.accessModes)) add("Access modes", spec.accessModes.join(", "));
       add("Capacity", status.capacity?.storage ?? spec.capacity?.storage ?? spec.resources?.requests?.storage, { mono: true });
-      add("Volume Name", spec.volumeName, { mono: true });
-      add("Volume Mode", spec.volumeMode);
-      add("Reclaim Policy", spec.persistentVolumeReclaimPolicy);
+      add("Volume name", spec.volumeName, { mono: true });
+      add("Volume mode", spec.volumeMode);
+      add("Reclaim policy", spec.persistentVolumeReclaimPolicy);
     } else if (kind === "Node") {
       const info = status.nodeInfo ?? {};
       add("Kubelet", info.kubeletVersion, { mono: true });
       add("OS / Arch", info.osImage ? `${info.osImage} (${info.architecture ?? ""})` : "");
       add("Kernel", info.kernelVersion, { mono: true });
       add("Runtime", info.containerRuntimeVersion, { mono: true });
-      if (spec.unschedulable) add("Schedulable", "No (Cordoned)", { tone: "warn" });
+      if (spec.unschedulable) add("Schedulable", "No (cordoned)", { tone: "warn" });
       if (Array.isArray(status.addresses)) {
         add(
           "Addresses",
@@ -301,9 +303,8 @@
       add("Type", obj.type, { mono: true });
       if (obj.immutable !== undefined) add("Immutable", String(obj.immutable));
       const dataKeys = [...Object.keys(obj.data ?? {}), ...Object.keys(obj.binaryData ?? {})];
-      add("Data Keys", dataKeys.length ? dataKeys.join(", ") : "None", { mono: true });
+      add("Data keys", dataKeys.length ? dataKeys.join(", ") : "None", { mono: true });
     } else {
-      // Generic fallback for any other resource kind: surface scalar / compact spec & status fields.
       for (const [sectionName, sectionObj] of [
         ["spec", spec],
         ["status", status],
@@ -336,7 +337,8 @@
     state: string;
     tone: string;
     restarts?: number;
-    resources: string;
+    cpu: ResourceMeter;
+    memory: ResourceMeter;
   }
 
   const containersList = $derived.by<ContainerSummary[]>(() => {
@@ -366,11 +368,12 @@
       const ports = Array.isArray(c.ports)
         ? c.ports.map((p: any) => `${p.name ? p.name + ":" : ""}${p.containerPort}/${p.protocol ?? "TCP"}`).join(", ")
         : "";
-      const req = c.resources?.requests;
-      const lim = c.resources?.limits;
-      const resParts: string[] = [];
-      if (req?.cpu || req?.memory) resParts.push(`req: ${[req.cpu && `cpu=${req.cpu}`, req.memory && `mem=${req.memory}`].filter(Boolean).join(" ")}`);
-      if (lim?.cpu || lim?.memory) resParts.push(`lim: ${[lim.cpu && `cpu=${lim.cpu}`, lim.memory && `mem=${lim.memory}`].filter(Boolean).join(" ")}`);
+      const req = c.resources?.requests ?? {};
+      const lim = c.resources?.limits ?? {};
+      const usage = metrics[c.name];
+      const cpu = buildResourceMeter("cpu", usage?.cpuMilli ?? 0, req.cpu, lim.cpu);
+      const memory = buildResourceMeter("memory", usage?.memoryBytes ?? 0, req.memory, lim.memory);
+
       return {
         name: c.name,
         role,
@@ -379,7 +382,8 @@
         state,
         tone,
         restarts: st?.restartCount,
-        resources: resParts.join(" · "),
+        cpu,
+        memory,
       };
     };
 
@@ -390,54 +394,89 @@
   });
 </script>
 
+{#snippet resourceRow(meter: ResourceMeter)}
+  <div class="meter-row">
+    <span class="meter-label">{meter.label}</span>
+    {#if meter.showBar}
+      <div class="meter-track" title={meter.hoverText}>
+        <div class={`meter-fill tone-bg-${meter.tone}`} style={`width:${meter.usedPct}%`}></div>
+        {#if meter.requestMarkPct !== null}
+          <span class="meter-req-mark" style={`left:${meter.requestMarkPct}%`}></span>
+        {/if}
+      </div>
+      <span class="meter-val mono">{meter.usedText} / {meter.limitText !== "none" ? meter.limitText : meter.scaleMaxText}</span>
+    {:else}
+      <span class="meter-plain mono">{meter.usedText}</span>
+    {/if}
+  </div>
+{/snippet}
+
 <aside class="drawer" style={`width:${width}px`}>
   <div class="resizer" onpointerdown={startResize} role="separator" aria-orientation="vertical"></div>
   <header>
     <div class="title">
       <span class="kind">{sel.type.kind}</span>
-      <strong title={sel.name}>{sel.name}</strong>
+      <strong>{sel.name}</strong>
       {#if sel.namespace}<span class="ns">{sel.namespace}</span>{/if}
     </div>
-    <button class="ghost close" onclick={() => (app.selection = null)} title="Close">✕</button>
+    <button class="ghost close" onclick={() => (app.selection = null)} title="Close detail panel (Esc)">✕</button>
   </header>
 
   <div class="actions">
     <div class="tabs" role="tablist">
-      <button role="tab" aria-selected={tab === "overview"} class:active={tab === "overview"} onclick={() => (tab = "overview")}>
+      <button
+        role="tab"
+        aria-selected={tab === "overview"}
+        class:active={tab === "overview"}
+        onclick={() => (tab = "overview")}
+        title="Show object metadata, specification, and events"
+      >
         Overview
       </button>
-      <button role="tab" aria-selected={tab === "yaml"} class:active={tab === "yaml"} onclick={() => (tab = "yaml")}>
+      <button
+        role="tab"
+        aria-selected={tab === "yaml"}
+        class:active={tab === "yaml"}
+        onclick={() => (tab = "yaml")}
+        title="View or edit raw YAML manifest"
+      >
         YAML{dirty ? " *" : ""}
       </button>
     </div>
 
     {#if isPod}
-      <button onclick={() => openDock("logs")}>Logs</button>
-      <button onclick={() => openDock("shell")}>Shell</button>
+      <button onclick={() => openDock("logs")} title={`Stream container logs for pod ${sel.name}`}>Logs</button>
+      <button onclick={() => openDock("shell")} title={`Open interactive shell in pod ${sel.name}`}>Shell</button>
     {/if}
     {#if canForward}
-      <button onclick={() => (app.forwardTarget = { ...sel })}>Port forward</button>
+      <button onclick={() => (app.forwardTarget = { ...sel })} title={`Forward a local TCP port to ${sel.type.kind} ${sel.name}`}>
+        Port forward
+      </button>
     {/if}
     {#if canScale}
       {#if replicas === null}
-        <button onclick={startScale}>Scale</button>
+        <button onclick={startScale} title={`Change replica count for ${sel.type.kind} ${sel.name}`}>Scale</button>
       {:else}
         <span class="scale">
           <input type="number" min="0" bind:value={replicas} onkeydown={(e) => e.key === "Enter" && scale()} />
-          <button class="primary" onclick={scale}>Set</button>
-          <button class="ghost" onclick={() => (replicas = null)}>✕</button>
+          <button class="primary" onclick={scale} title={`Apply ${replicas ?? 0} replicas to ${sel.name}`}>Set</button>
+          <button class="ghost" onclick={() => (replicas = null)} title="Cancel scaling">✕</button>
         </span>
       {/if}
     {/if}
-    {#if canRestart}<button onclick={restart}>Restart</button>{/if}
+    {#if canRestart}
+      <button onclick={restart} title={`Trigger a rolling restart of ${sel.type.kind} ${sel.name}`}>Restart</button>
+    {/if}
     <span class="grow"></span>
     {#if editing}
-      <button onclick={cancelEdit} disabled={saving}>Cancel</button>
-      <button class="primary" onclick={save} disabled={saving || !dirty}>{saving ? "Applying…" : "Apply"}</button>
+      <button onclick={cancelEdit} disabled={saving} title="Discard YAML edits">Cancel</button>
+      <button class="primary" onclick={save} disabled={saving || !dirty} title="Server-side apply YAML changes (Ctrl+S)">
+        {saving ? "Applying…" : "Apply"}
+      </button>
     {:else}
-      <button onclick={load} disabled={loading}>Refresh</button>
-      <button onclick={startEdit} disabled={!yaml}>Edit YAML</button>
-      <button class="danger" onclick={remove}>Delete</button>
+      <button onclick={load} disabled={loading} title={`Reload ${sel.type.kind} ${sel.name} details and events`}>Refresh</button>
+      <button onclick={startEdit} disabled={!yaml} title={`Edit ${sel.type.kind} ${sel.name} YAML manifest`}>Edit YAML</button>
+      <button class="danger" onclick={remove} title={`Delete ${sel.type.kind} ${sel.name} from cluster`}>Delete</button>
     {/if}
   </div>
 
@@ -448,8 +487,7 @@
       {#if loading && !obj}
         <p class="empty">Loading…</p>
       {:else if obj}
-        <!-- Metadata Section -->
-        <section class="card">
+        <section class="section">
           <h4>Metadata</h4>
           <dl class="kv-grid">
             <dt>Name</dt>
@@ -458,8 +496,8 @@
               <dt>Namespace</dt>
               <dd class="mono">{metadata.namespace}</dd>
             {/if}
-            <dt>API / Kind</dt>
-            <dd class="mono">{obj.apiVersion ?? sel.type.version} · {obj.kind ?? sel.type.kind}</dd>
+            <dt>API version</dt>
+            <dd class="mono">{obj.apiVersion ?? sel.type.version} ({obj.kind ?? sel.type.kind})</dd>
             {#if metadata.creationTimestamp}
               <dt>Created</dt>
               <dd>{age(metadata.creationTimestamp, app.now)} ago <span class="muted">({metadata.creationTimestamp})</span></dd>
@@ -469,11 +507,11 @@
               <dd class="mono">{metadata.uid}</dd>
             {/if}
             {#if metadata.resourceVersion}
-              <dt>Resource Version</dt>
+              <dt>Resource version</dt>
               <dd class="mono">{metadata.resourceVersion}{metadata.generation ? ` (gen ${metadata.generation})` : ""}</dd>
             {/if}
             {#if owners.length > 0}
-              <dt>Controlled By</dt>
+              <dt>Controlled by</dt>
               <dd class="chips">
                 {#each owners as o (`${o.kind}/${o.name}`)}
                   <span class="chip mono">{o.kind}/{o.name}</span>
@@ -495,7 +533,7 @@
               {:else}
                 <div class="chips">
                   {#each labels as [k, v] (k)}
-                    <span class="chip mono" title={`${k}=${v}`}>{k}={v}</span>
+                    <span class="chip mono">{k}={v}</span>
                   {/each}
                 </div>
               {/if}
@@ -507,7 +545,7 @@
               {:else}
                 <div class="ann-list">
                   {#each annotations as [k, v] (k)}
-                    <div class="ann-item">
+                    <div class="ann-row">
                       <span class="mono ann-k">{k}</span>
                       <span class="mono ann-v">{v}</span>
                     </div>
@@ -518,111 +556,119 @@
           </dl>
         </section>
 
-        <!-- Spec & Status Section -->
-        {#if specRows.length > 0 || selectorEntries.length > 0 || containersList.length > 0 || conditions.length > 0}
-          <section class="card">
-            <h4>Spec &amp; Status</h4>
-            {#if specRows.length > 0 || selectorEntries.length > 0}
-              <dl class="kv-grid">
-                {#each specRows as r (r.label)}
-                  <dt>{r.label}</dt>
-                  <dd class={`${r.mono ? "mono " : ""}${r.tone ? `tone-${r.tone}` : ""}`}>{r.value}</dd>
-                {/each}
-                {#if selectorEntries.length > 0}
-                  <dt>Selector</dt>
-                  <dd class="chips">
-                    {#each selectorEntries as [k, v] (k)}
-                      <span class="chip mono">{k}={v}</span>
-                    {/each}
-                  </dd>
-                {/if}
-              </dl>
-            {/if}
-
-            {#if containersList.length > 0}
-              <div class="sub">
-                <h5>Containers ({containersList.length})</h5>
-                <div class="container-list">
-                  {#each containersList as c (`${c.role}:${c.name}`)}
-                    <div class="container-item">
-                      <div class="container-head">
-                        <strong class="mono">{c.name}</strong>
-                        {#if c.role !== "main"}<span class="pill">{c.role}</span>{/if}
-                        {#if c.state}<span class={`tone-${c.tone}`}>{c.state}</span>{/if}
-                        {#if c.restarts != null}<span class="muted">restarts: {c.restarts}</span>{/if}
-                        <span class="grow"></span>
-                        {#if isPod}
-                          <button class="mini" onclick={() => openDock("logs", c.name)}>Logs</button>
-                          <button class="mini" onclick={() => openDock("shell", c.name)}>Shell</button>
-                        {/if}
-                      </div>
-                      <div class="mono muted">{c.image}</div>
-                      {#if c.ports || c.resources}
-                        <div class="mono muted">{[c.ports && `ports: ${c.ports}`, c.resources].filter(Boolean).join(" · ")}</div>
-                      {/if}
-                    </div>
+        {#if specRows.length > 0 || selectorEntries.length > 0}
+          <section class="section">
+            <h4>Specification &amp; status</h4>
+            <dl class="kv-grid">
+              {#each specRows as r (r.label)}
+                <dt>{r.label}</dt>
+                <dd class={`${r.mono ? "mono " : ""}${r.tone ? `tone-${r.tone}` : ""}`}>{r.value}</dd>
+              {/each}
+              {#if selectorEntries.length > 0}
+                <dt>Selector</dt>
+                <dd class="chips">
+                  {#each selectorEntries as [k, v] (k)}
+                    <span class="chip mono">{k}={v}</span>
                   {/each}
-                </div>
-              </div>
-            {/if}
-
-            {#if conditions.length > 0}
-              <div class="sub">
-                <h5>Conditions</h5>
-                <table class="mini-table">
-                  <thead>
-                    <tr>
-                      <th>Type</th>
-                      <th>Status</th>
-                      <th>Reason</th>
-                      <th>Message</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {#each conditions as cond, idx (cond.type ?? idx)}
-                      <tr>
-                        <td class="mono">{cond.type ?? "—"}</td>
-                        <td class={cond.status === "True" ? "tone-ok" : cond.status === "False" ? "tone-muted" : "tone-warn"}>
-                          {cond.status ?? "—"}
-                        </td>
-                        <td class="mono">{cond.reason ?? "—"}</td>
-                        <td title={cond.message ?? ""}>{cond.message ?? "—"}</td>
-                      </tr>
-                    {/each}
-                  </tbody>
-                </table>
-              </div>
-            {/if}
+                </dd>
+              {/if}
+            </dl>
           </section>
         {/if}
 
-        <!-- Object Events Section -->
-        <section class="card">
-          <h4>Events ({events.length})</h4>
-          {#if events.length === 0}
-            <p class="muted empty-inline">No events found for this {sel.type.kind}.</p>
-          {:else}
-            <div class="event-list">
-              {#each events as ev, i (i)}
-                <div class="event-item" class:warn={ev.type === "Warning"}>
-                  <div class="event-head">
-                    <span class={ev.type === "Warning" ? "tone-warn" : "tone-ok"}>{ev.type || "Normal"}</span>
-                    <strong class="mono">{ev.reason}</strong>
-                    {#if ev.count > 1}<span class="pill">×{ev.count}</span>{/if}
+        {#if containersList.length > 0}
+          <section class="section">
+            <h4>Containers ({containersList.length})</h4>
+            <div class="container-list">
+              {#each containersList as c (`${c.role}:${c.name}`)}
+                <div class="container-row">
+                  <div class="container-head">
+                    <strong class="mono">{c.name}</strong>
+                    {#if c.role !== "main"}<span class="pill">{c.role}</span>{/if}
+                    {#if c.state}<span class={`tone-${c.tone}`}>{c.state}</span>{/if}
+                    {#if c.restarts != null}<span class="muted">restarts: {c.restarts}</span>{/if}
                     <span class="grow"></span>
-                    {#if ev.lastSeen}
-                      <span class="muted" title={ev.lastSeen}>{age(ev.lastSeen, app.now)} ago</span>
+                    {#if isPod}
+                      <button class="mini" onclick={() => openDock("logs", c.name)} title={`View logs for container ${c.name}`}>
+                        Logs
+                      </button>
+                      <button class="mini" onclick={() => openDock("shell", c.name)} title={`Open shell in container ${c.name}`}>
+                        Shell
+                      </button>
                     {/if}
                   </div>
-                  <div class="event-msg">{ev.message}</div>
-                  {#if ev.source || ev.subObject}
-                    <div class="mono muted event-src">
-                      {[ev.source, ev.subObject].filter(Boolean).join(" · ")}
-                    </div>
-                  {/if}
+                  <div class="mono muted">{c.image}{c.ports ? ` (${c.ports})` : ""}</div>
+                  <div class="meters">
+                    {@render resourceRow(c.cpu)}
+                    {@render resourceRow(c.memory)}
+                  </div>
                 </div>
               {/each}
             </div>
+          </section>
+        {/if}
+
+        {#if conditions.length > 0}
+          <section class="section">
+            <h4>Conditions</h4>
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Reason</th>
+                  <th>Message</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each conditions as cond, idx (cond.type ?? idx)}
+                  <tr>
+                    <td class="mono">{cond.type ?? "—"}</td>
+                    <td class={cond.status === "True" ? "tone-ok" : cond.status === "False" ? "tone-muted" : "tone-warn"}>
+                      {cond.status ?? "—"}
+                    </td>
+                    <td class="mono">{cond.reason ?? "—"}</td>
+                    <td>{cond.message ?? "—"}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </section>
+        {/if}
+
+        <section class="section">
+          <h4>Events ({events.length})</h4>
+          {#if events.length === 0}
+            <p class="muted empty-inline">No events recorded for this {sel.type.kind}.</p>
+          {:else}
+            <table class="ledger-table events-table">
+              <thead>
+                <tr>
+                  <th class="col-reason">Reason</th>
+                  <th>Message</th>
+                  <th class="col-age">Age</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each events as ev, i (i)}
+                  <tr>
+                    <td class="col-reason">
+                      <span class={ev.type === "Warning" ? "tone-warn reason-name" : "reason-name"}>{ev.reason || ev.type}</span>
+                      {#if ev.count > 1}<span class="event-count">×{ev.count}</span>{/if}
+                    </td>
+                    <td>
+                      <div class="event-msg">{ev.message}</div>
+                      {#if ev.source || ev.subObject}
+                        <div class="mono muted event-meta">
+                          {ev.source}{ev.source && ev.subObject ? " / " : ""}{ev.subObject}
+                        </div>
+                      {/if}
+                    </td>
+                    <td class="col-age mono muted">{ev.lastSeen ? age(ev.lastSeen, app.now) : "—"}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
           {/if}
         </section>
       {/if}
@@ -679,9 +725,8 @@
     color: var(--text-strong);
   }
   .kind {
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    font-size: 12px;
+    font-weight: 600;
     color: var(--accent);
   }
   .ns {
@@ -729,38 +774,23 @@
   .overview {
     flex: 1;
     overflow-y: auto;
-    padding: var(--space-3);
+    padding: 0 var(--space-3) var(--space-4);
     display: flex;
     flex-direction: column;
-    gap: var(--space-3);
     min-height: 0;
   }
-  .card {
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    padding: var(--space-3);
+  .section {
+    padding: var(--space-3) 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .section:last-child {
+    border-bottom: 0;
   }
   h4 {
     margin: 0 0 var(--space-2);
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--muted);
+    font-size: 13px;
+    color: var(--text-strong);
     font-weight: 600;
-  }
-  h5 {
-    margin: 0 0 var(--space-2);
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--muted);
-    font-weight: 600;
-  }
-  .sub {
-    margin-top: var(--space-3);
-    padding-top: var(--space-3);
-    border-top: 1px solid var(--border-soft);
   }
   .kv-grid {
     display: grid;
@@ -797,7 +827,7 @@
     display: inline-block;
     padding: 0 var(--space-2);
     line-height: 20px;
-    background: var(--panel);
+    background: var(--bg);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     color: var(--text);
@@ -811,13 +841,14 @@
     flex-direction: column;
     gap: var(--space-1);
   }
-  .ann-item {
+  .ann-row {
     display: flex;
     flex-direction: column;
-    padding: var(--space-1) var(--space-2);
-    background: var(--panel);
-    border: 1px solid var(--border-soft);
-    border-radius: var(--radius);
+    padding: var(--space-1) 0;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .ann-row:last-child {
+    border-bottom: 0;
   }
   .ann-k {
     color: var(--accent);
@@ -830,68 +861,129 @@
   .container-list {
     display: flex;
     flex-direction: column;
-    gap: var(--space-2);
   }
-  .container-item {
+  .container-row {
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
-    padding: var(--space-2);
-    background: var(--panel);
-    border: 1px solid var(--border-soft);
-    border-radius: var(--radius);
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .container-row:first-child {
+    padding-top: 0;
+  }
+  .container-row:last-child {
+    border-bottom: 0;
+    padding-bottom: 0;
   }
   .container-head {
     display: flex;
     align-items: center;
     gap: var(--space-2);
   }
-  .mini-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 12px;
-  }
-  .mini-table th,
-  .mini-table td {
-    text-align: left;
-    padding: var(--space-1) var(--space-2);
-    border-bottom: 1px solid var(--border-soft);
-    vertical-align: top;
-  }
-  .mini-table th {
-    color: var(--muted);
-    font-weight: 600;
-  }
-  .event-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-  .event-item {
+  .meters {
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
-    padding: var(--space-2);
-    background: var(--panel);
-    border: 1px solid var(--border-soft);
-    border-left: 2px solid var(--ok);
-    border-radius: var(--radius);
-    font-size: 12.5px;
+    margin-top: var(--space-1);
   }
-  .event-item.warn {
-    border-left-color: var(--warn);
-  }
-  .event-head {
-    display: flex;
+  .meter-row {
+    display: grid;
+    grid-template-columns: 56px 1fr auto;
     align-items: center;
     gap: var(--space-2);
     font-size: 12px;
   }
-  .event-msg {
+  .meter-label {
+    color: var(--muted);
+  }
+  .meter-track {
+    position: relative;
+    height: var(--space-2);
+    background: var(--track);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .meter-fill {
+    height: 100%;
+    border-radius: 999px;
+  }
+  .tone-bg-ok {
+    background: var(--ok);
+  }
+  .tone-bg-warn {
+    background: var(--warn);
+  }
+  .tone-bg-bad {
+    background: var(--bad);
+  }
+  .meter-req-mark {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    margin-left: -1px;
+    background: var(--mark-request);
+    pointer-events: none;
+  }
+  .meter-val,
+  .meter-plain {
     color: var(--text-strong);
+    font-variant-numeric: tabular-nums;
+  }
+  .ledger-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .ledger-table th,
+  .ledger-table td {
+    text-align: left;
+    padding: var(--space-2) var(--space-2) var(--space-2) 0;
+    border-bottom: 1px solid var(--border-soft);
+    vertical-align: top;
+  }
+  .ledger-table th {
+    padding-top: 0;
+    color: var(--muted);
+    font-weight: 500;
+  }
+  .ledger-table tbody tr:last-child td {
+    border-bottom: 0;
+  }
+  .events-table .col-reason {
+    width: 128px;
+    white-space: nowrap;
+  }
+  .events-table .col-age {
+    width: 56px;
+    text-align: right;
+    padding-right: 0;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .reason-name {
+    font-family: var(--mono);
+    font-weight: 600;
+    color: var(--text-strong);
+  }
+  .reason-name.tone-warn {
+    color: var(--warn);
+  }
+  .event-count {
+    margin-left: var(--space-1);
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .event-msg {
+    color: var(--text);
+    line-height: 16px;
     word-break: break-word;
   }
-  .event-src {
+  .event-meta {
+    margin-top: var(--space-1);
     font-size: 11px;
   }
   .empty,

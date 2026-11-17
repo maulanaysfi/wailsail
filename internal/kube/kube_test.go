@@ -169,3 +169,23 @@ func TestFilterAndSortEvents(t *testing.T) {
 		t.Fatalf("second event: %+v", got[1])
 	}
 }
+
+func TestParsePodMetrics(t *testing.T) {
+	raw := []byte(`{"containers":[{"name":"app","usage":{"cpu":"250m","memory":"64Mi"}},{"name":"sidecar","usage":{"cpu":"1","memory":"1Gi"}}]}`)
+	m := parsePodMetricsJSON(raw)
+	if m["app"].CPUMilli != 250 || m["app"].MemoryBytes != 64*1024*1024 {
+		t.Fatalf("unexpected app metrics: %+v", m["app"])
+	}
+	if m["sidecar"].CPUMilli != 1000 || m["sidecar"].MemoryBytes != 1024*1024*1024 {
+		t.Fatalf("unexpected sidecar metrics: %+v", m["sidecar"])
+	}
+
+	listRaw := []byte(`{"items":[
+		{"containers":[{"name":"app","usage":{"cpu":"100m","memory":"100Mi"}}]},
+		{"containers":[{"name":"app","usage":{"cpu":"300m","memory":"300Mi"}}]}
+	]}`)
+	avg := parsePodMetricsListJSON(listRaw)
+	if avg["app"].CPUMilli != 200 || avg["app"].MemoryBytes != 200*1024*1024 {
+		t.Fatalf("unexpected averaged metrics: %+v", avg["app"])
+	}
+}

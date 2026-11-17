@@ -9,6 +9,7 @@ export {
 export type {
     ApplyResult,
     ContainerInfo,
+    ContainerMetrics,
     ContainerPort,
     ContextInfo,
     EventInfo,

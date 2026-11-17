@@ -25,6 +25,21 @@ export interface ContainerInfo {
 }
 
 /**
+ * ContainerMetrics holds parsed live CPU and memory usage for a container.
+ */
+export interface ContainerMetrics {
+    /**
+     * millicores (1000m = 1 core)
+     */
+    "cpuMilli": number;
+
+    /**
+     * bytes
+     */
+    "memoryBytes": number;
+}
+
+/**
  * ContainerPort is a port declared by a container or service.
  */
 export interface ContainerPort {
@@ -91,13 +106,14 @@ export interface EventInfo {
 }
 
 /**
- * ObjectDetail bundles the structured object, its YAML representation, and
- * related Kubernetes events for the detail drawer.
+ * ObjectDetail bundles the structured object, its YAML representation,
+ * related Kubernetes events, and live container metrics for the detail drawer.
  */
 export interface ObjectDetail {
     "object": { [_ in string]?: any } | null;
     "yaml": string;
     "events": EventInfo[] | null;
+    "metrics": { [_ in string]?: ContainerMetrics } | null;
 }
 
 /**
