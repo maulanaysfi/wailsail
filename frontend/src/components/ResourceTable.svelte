@@ -18,8 +18,6 @@
   const ROW_H = 32;
   const MIN_COL_W = 48;
 
-  const ownableKinds = new Set(["/Pod", "apps/ReplicaSet", "batch/Job"]);
-
   const rows = new Map<string, Row>();
   let version = $state(0);
   let totalRows = $state(0);
@@ -43,9 +41,6 @@
   const allNamespaces = $derived(!!app.current?.namespaced && app.namespace === "");
   const curKindKey = $derived(app.current ? kindKey(app.current) : "");
   const isPod = $derived(curKindKey === "/Pod");
-  const hasOwnerAction = $derived(ownableKinds.has(curKindKey));
-  const hasActionsCol = $derived(isPod || hasOwnerAction);
-  const actionsColW = $derived(isPod ? 208 : 120);
   const resScopeKey = $derived(app.current ? resourceKey(app.current) : "_");
 
   // Start a watch whenever the context, resource type or namespace changes.
@@ -263,7 +258,7 @@
   }
 
   const totalTableW = $derived(
-    displayCols.reduce((sum, c) => sum + colWidth(c), 0) + (hasActionsCol ? actionsColW : 0),
+    displayCols.reduce((sum, c) => sum + colWidth(c), 0),
   );
 
   function startColResize(e: PointerEvent, c: DisplayCol) {
@@ -413,16 +408,6 @@
     const s = app.selection;
     return !!s && s.name === r.name && s.namespace === r.namespace;
   }
-
-  function openPod(kind: "logs" | "shell", r: Row, e: MouseEvent) {
-    e.stopPropagation();
-    app.openDock({ kind, title: r.name, context: app.context, namespace: r.namespace, pod: r.name });
-  }
-
-  function jumpOwner(r: Row, e: MouseEvent) {
-    e.stopPropagation();
-    app.jumpToOwner(r.owner, r.namespace);
-  }
 </script>
 
 {#snippet cellMeter(meter: ResourceMeter, maxCh: number)}
@@ -445,7 +430,12 @@
   <div class="toolbar">
     <h2>{app.current?.kind ?? "—"}</h2>
     <span class="count">{view.length}{filter ? ` / ${totalRows}` : ""}</span>
-    <input class="filter" placeholder="Filter…" bind:value={filter} />
+    <div class="filter-wrap">
+      <input class="filter" placeholder="Filter…" bind:value={filter} />
+      {#if filter}
+        <button class="clear-btn" onclick={() => (filter = "")} title="Clear filter" aria-label="Clear filter">✕</button>
+      {/if}
+    </div>
   </div>
 
   {#if error}
@@ -458,7 +448,6 @@
         {#each displayCols as c (c.key)}
           <col style={`width:${colWidth(c)}px`} />
         {/each}
-        {#if hasActionsCol}<col style={`width:${actionsColW}px`} />{/if}
       </colgroup>
       <thead>
         <tr bind:this={headerRowEl}>
@@ -484,7 +473,6 @@
               ></span>
             </th>
           {/each}
-          {#if hasActionsCol}<th class="actions-h"></th>{/if}
         </tr>
       </thead>
       <tbody>
@@ -499,28 +487,6 @@
                 <td class={c.status ? `tone-${toneFor(v)}` : ""} class:name-col={c.key === "c0" || c.key === "name"}>{v}</td>
               {/if}
             {/each}
-            {#if hasActionsCol}
-              <td class="actions">
-                {#if hasOwnerAction}
-                  <button
-                    class="mini"
-                    disabled={!r.owner}
-                    onclick={(e) => jumpOwner(r, e)}
-                    title={r.owner ? `Jump to owner ${r.owner.kind}/${r.owner.name}` : "No owner reference"}
-                  >
-                    Jump to Owner
-                  </button>
-                {/if}
-                {#if isPod}
-                  <button class="mini" onclick={(e) => openPod("logs", r, e)} title={`Stream container logs for pod ${r.name}`}>
-                    Logs
-                  </button>
-                  <button class="mini" onclick={(e) => openPod("shell", r, e)} title={`Open interactive shell in pod ${r.name}`}>
-                    Shell
-                  </button>
-                {/if}
-              </td>
-            {/if}
           </tr>
         {/each}
         {#if last < view.length}<tr class="spacer" style={`height:${(view.length - last) * ROW_H}px`}></tr>{/if}
@@ -566,10 +532,33 @@
     font-size: 12px;
     font-variant-numeric: tabular-nums;
   }
-  .filter {
+  .filter-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
     margin-left: auto;
+  }
+  .filter {
     width: 240px;
     height: var(--control-h);
+    padding-right: var(--space-4);
+  }
+  .clear-btn {
+    position: absolute;
+    right: var(--space-1);
+    min-height: 0;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1;
+  }
+  .clear-btn:hover:not(:disabled) {
+    color: var(--text-strong);
+    background: var(--hover);
   }
   .grid-wrap {
     flex: 1;
@@ -669,8 +658,8 @@
   }
   .cell-meter-text,
   .cell-meter-plain {
-    font-family: var(--mono);
-    font-size: 11px;
+    font-family: var(--sans);
+    font-size: 12px;
     font-variant-numeric: tabular-nums;
     color: var(--text);
   }
@@ -678,17 +667,6 @@
     text-align: left;
     overflow: hidden;
     text-overflow: clip;
-  }
-  .actions-h,
-  .actions {
-    text-align: right;
-    cursor: default;
-  }
-  .actions .mini {
-    visibility: hidden;
-  }
-  tr:hover .actions .mini {
-    visibility: visible;
   }
   .empty {
     text-align: center;

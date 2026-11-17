@@ -16,7 +16,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Renders rounded-edge progress bars on a theme-matched grey track representing resource limits, with a vertical line marker for resource requests (white at `request / limit` when both request and limit are defined, or yellow at `25%` when only a request is defined so `100%` equals `4 × request`).
   - Falls back to plain-text usage (`N/A` when metrics are unavailable) when neither request nor limit is defined, omits the vertical marker when only a limit is defined, colors the bar indicator by usage threshold (`<80%` green, `80%–94.99%` yellow, `>=95%` red), and shows `Used / Request / Limit` on hover.
 - **Jump to Owner Navigation**:
-  - Added **Jump to Owner** button in the resource table and `DetailDrawer` for owned objects (`Pod`, `ReplicaSet`, `Job`, etc.), navigating directly to the controlling owner resource and disabling the button when no owner reference exists (such as standalone pods).
+  - Added **Jump to Owner** button in `DetailDrawer` for owned objects (`Pod`, `ReplicaSet`, `Job`, etc.), navigating directly to the controlling owner resource and disabling the button when no owner reference exists (such as standalone pods).
+- **DetailDrawer Action Icons & Search Clear Buttons**:
+  - Replaced `DetailDrawer` header action buttons (`Logs`, `Shell`, `Refresh`, `Edit YAML`, `Delete`) with right-aligned icon buttons (keeping text buttons for `Overview`/`YAML`, `Jump to Owner`, `Port forward`, and per-container `Logs`/`Shell` actions).
+  - Removed the redundant right-hand action column from the Pod table since all actions are available in `DetailDrawer`.
+  - Added clear (`✕`) buttons to the sidebar resource search bar and table filter input when non-empty.
+  - Set resource usage meter text to use Google Sans Flex (`--sans`) with tabular numerals.
 - **Persistent Column Order & Widths**:
   - Custom column orders (`columnOrders`) and resized column widths (`columnWidths`) are now persisted per resource type in `settings.json` across restarts.
 - **Row Selection Toggle**:

@@ -57,7 +57,12 @@
 {/snippet}
 
 <nav class="sidebar">
-  <input class="search" placeholder="Find resource type…" bind:value={query} />
+  <div class="search-wrap">
+    <input class="search" placeholder="Find resource type…" bind:value={query} />
+    {#if query}
+      <button class="clear-btn" onclick={() => (query = "")} title="Clear search" aria-label="Clear search">✕</button>
+    {/if}
+  </div>
   {#if app.resourcesLoading}
     <p class="hint">Discovering resources…</p>
   {/if}
@@ -99,9 +104,33 @@
     background: var(--panel);
     min-height: 0;
   }
-  .search {
+  .search-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
     margin: var(--space-2);
+  }
+  .search {
+    width: 100%;
     height: var(--control-h);
+    padding-right: var(--space-4);
+  }
+  .clear-btn {
+    position: absolute;
+    right: var(--space-1);
+    min-height: 0;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1;
+  }
+  .clear-btn:hover:not(:disabled) {
+    color: var(--text-strong);
+    background: var(--hover);
   }
   .hint {
     margin: 0 var(--space-3) var(--space-2);

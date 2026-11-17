@@ -400,7 +400,7 @@
   <div class="meter-row">
     <span class="meter-label">{meter.label}</span>
     {#if meter.showBar}
-      <span class="meter-val mono">{meter.usedText} / {meter.limitText !== "none" ? meter.limitText : meter.scaleMaxText}</span>
+      <span class="meter-val">{meter.usedText} / {meter.limitText !== "none" ? meter.limitText : meter.scaleMaxText}</span>
       <div class="meter-track" title={meter.hoverText}>
         <div class={`meter-fill tone-bg-${meter.tone}`} style={`width:${meter.usedPct}%`}></div>
         {#if meter.requestMarkPct !== null}
@@ -408,7 +408,7 @@
         {/if}
       </div>
     {:else}
-      <span class="meter-plain mono">{meter.usedText}</span>
+      <span class="meter-plain">{meter.usedText}</span>
     {/if}
   </div>
 {/snippet}
@@ -455,44 +455,77 @@
             { apiVersion: primaryOwner.apiVersion, kind: primaryOwner.kind, name: primaryOwner.name },
             sel.namespace,
           )}
-        title={primaryOwner ? `Jump to owner ${primaryOwner.kind}/${primaryOwner.name}` : "No owner reference"}
+        title={primaryOwner ? `Jump to Owner (${primaryOwner.kind}/${primaryOwner.name})` : "Jump to Owner (no owner reference)"}
       >
         Jump to Owner
       </button>
     {/if}
-    {#if isPod}
-      <button onclick={() => openDock("logs")} title={`Stream container logs for pod ${sel.name}`}>Logs</button>
-      <button onclick={() => openDock("shell")} title={`Open interactive shell in pod ${sel.name}`}>Shell</button>
-    {/if}
     {#if canForward}
-      <button onclick={() => (app.forwardTarget = { ...sel })} title={`Forward a local TCP port to ${sel.type.kind} ${sel.name}`}>
+      <button onclick={() => (app.forwardTarget = { ...sel })} title={`Port forward (${sel.type.kind} ${sel.name})`}>
         Port forward
       </button>
     {/if}
     {#if canScale}
       {#if replicas === null}
-        <button onclick={startScale} title={`Change replica count for ${sel.type.kind} ${sel.name}`}>Scale</button>
+        <button onclick={startScale} title={`Scale (${sel.type.kind} ${sel.name})`}>Scale</button>
       {:else}
         <span class="scale">
           <input type="number" min="0" bind:value={replicas} onkeydown={(e) => e.key === "Enter" && scale()} />
-          <button class="primary" onclick={scale} title={`Apply ${replicas ?? 0} replicas to ${sel.name}`}>Set</button>
+          <button class="primary" onclick={scale} title={`Set replicas to ${replicas ?? 0}`}>Set</button>
           <button class="ghost" onclick={() => (replicas = null)} title="Cancel scaling">✕</button>
         </span>
       {/if}
     {/if}
     {#if canRestart}
-      <button onclick={restart} title={`Trigger a rolling restart of ${sel.type.kind} ${sel.name}`}>Restart</button>
+      <button onclick={restart} title={`Restart (${sel.type.kind} ${sel.name})`}>Restart</button>
     {/if}
     <span class="grow"></span>
     {#if editing}
-      <button onclick={cancelEdit} disabled={saving} title="Discard YAML edits">Cancel</button>
-      <button class="primary" onclick={save} disabled={saving || !dirty} title="Server-side apply YAML changes (Ctrl+S)">
+      <button onclick={cancelEdit} disabled={saving} title="Cancel YAML edits">Cancel</button>
+      <button class="primary" onclick={save} disabled={saving || !dirty} title="Apply YAML changes (Ctrl+S)">
         {saving ? "Applying…" : "Apply"}
       </button>
     {:else}
-      <button onclick={load} disabled={loading} title={`Reload ${sel.type.kind} ${sel.name} details and events`}>Refresh</button>
-      <button onclick={startEdit} disabled={!yaml} title={`Edit ${sel.type.kind} ${sel.name} YAML manifest`}>Edit YAML</button>
-      <button class="danger" onclick={remove} title={`Delete ${sel.type.kind} ${sel.name} from cluster`}>Delete</button>
+      {#if isPod}
+        <button class="icon" onclick={() => openDock("logs")} title={`Logs (${sel.name})`} aria-label="Logs">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="8" y1="13" x2="16" y2="13" />
+            <line x1="8" y1="17" x2="16" y2="17" />
+            <line x1="8" y1="9" x2="10" y2="9" />
+          </svg>
+        </button>
+        <button class="icon" onclick={() => openDock("shell")} title={`Shell (${sel.name})`} aria-label="Shell">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="4 17 10 11 4 5" />
+            <line x1="12" y1="19" x2="20" y2="19" />
+          </svg>
+        </button>
+      {/if}
+      <button class="icon" onclick={load} disabled={loading} title={`Refresh (${sel.type.kind} ${sel.name})`} aria-label="Refresh">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="23 4 23 10 17 10" />
+          <polyline points="1 20 1 14 7 14" />
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+        </svg>
+      </button>
+      <button class="icon" onclick={startEdit} disabled={!yaml} title={`Edit YAML (${sel.type.kind} ${sel.name})`} aria-label="Edit YAML">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7" />
+          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+          <line x1="8" y1="9" x2="11" y2="9" />
+          <line x1="8" y1="13" x2="10" y2="13" />
+        </svg>
+      </button>
+      <button class="icon danger" onclick={remove} title={`Delete (${sel.type.kind} ${sel.name})`} aria-label="Delete">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="3 6 5 6 21 6" />
+          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+          <line x1="10" y1="11" x2="10" y2="17" />
+          <line x1="14" y1="11" x2="14" y2="17" />
+        </svg>
+      </button>
     {/if}
   </div>
 
@@ -757,6 +790,14 @@
     padding: 0 var(--space-3) var(--space-3);
     border-bottom: 1px solid var(--border);
   }
+  .actions button.icon {
+    width: var(--control-h-sm);
+    height: var(--control-h-sm);
+  }
+  .actions button.icon svg {
+    width: 14px;
+    height: 14px;
+  }
   .tabs {
     display: inline-flex;
     border: 1px solid var(--border);
@@ -916,6 +957,7 @@
   }
   .meter-val,
   .meter-plain {
+    font-family: var(--sans);
     text-align: left;
     color: var(--text-strong);
     font-variant-numeric: tabular-nums;
