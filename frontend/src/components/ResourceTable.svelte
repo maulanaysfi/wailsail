@@ -649,13 +649,10 @@
     color: var(--text-strong);
   }
   .cell-meter {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(48px, 1fr) 56px;
     align-items: center;
     gap: var(--space-2);
-  }
-  .cell-meter .meter-track {
-    flex: 1;
-    min-width: 48px;
   }
   .cell-meter-text,
   .cell-meter-plain {
@@ -663,6 +660,11 @@
     font-size: 11px;
     font-variant-numeric: tabular-nums;
     color: var(--text);
+  }
+  .cell-meter-text {
+    text-align: right;
+    overflow: hidden;
+    text-overflow: clip;
   }
   .actions-h,
   .actions {

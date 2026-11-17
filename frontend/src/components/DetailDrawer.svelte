@@ -898,17 +898,18 @@
     gap: var(--space-2);
   }
   .meters {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--space-3);
     margin-top: var(--space-1);
   }
   .meter-row {
     display: grid;
-    grid-template-columns: 56px 1fr auto;
+    grid-template-columns: auto minmax(48px, 1fr) auto;
     align-items: center;
     gap: var(--space-2);
     font-size: 12px;
+    min-width: 0;
   }
   .meter-label {
     color: var(--muted);

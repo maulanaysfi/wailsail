@@ -20,6 +20,7 @@
   --radius-lg: 8px;
   --control-h: 32px;
   --control-h-sm: 24px;
+  --meter-h: 12px;
 
   --sans: "Google Sans Flex", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
@@ -190,7 +191,7 @@ textarea:focus {
 
 .meter-track {
   position: relative;
-  height: var(--space-2);
+  height: var(--meter-h);
   background: var(--track);
   border-radius: 999px;
   overflow: hidden;
