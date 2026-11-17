@@ -188,4 +188,30 @@ func TestParsePodMetrics(t *testing.T) {
 	if avg["app"].CPUMilli != 200 || avg["app"].MemoryBytes != 200*1024*1024 {
 		t.Fatalf("unexpected averaged metrics: %+v", avg["app"])
 	}
+
+	allRaw := []byte(`{"items":[{"metadata":{"name":"web-1","namespace":"prod"},"containers":[{"name":"app","usage":{"cpu":"125m","memory":"32Mi"}}]}]}`)
+	all := parseAllPodsMetricsJSON(allRaw)
+	if all["prod/web-1/app"].CPUMilli != 125 || all["prod/web-1"].MemoryBytes != 32*1024*1024 {
+		t.Fatalf("unexpected all pods metrics: %+v", all)
+	}
+}
+
+func TestParseTableOwnerAndPodResources(t *testing.T) {
+	raw := []byte(`{"kind":"Table","apiVersion":"meta.k8s.io/v1",
+	"columnDefinitions":[{"name":"Name","type":"string","priority":0}],
+	"rows":[{"cells":["web-1"],
+	"object":{"kind":"Pod","metadata":{"name":"web-1","namespace":"prod","uid":"u-1",
+	"ownerReferences":[{"apiVersion":"apps/v1","kind":"ReplicaSet","name":"web-rs","controller":true}]},
+	"spec":{"containers":[{"name":"app","resources":{"requests":{"cpu":"250m","memory":"128Mi"},"limits":{"cpu":"500m","memory":"256Mi"}}},{"name":"sidecar","resources":{"requests":{"cpu":"50m"}}}]}}}]}`)
+	res, err := parseTable(raw, nil)
+	if err != nil || len(res.Rows) != 1 {
+		t.Fatalf("parseTable: %v %+v", err, res)
+	}
+	r := res.Rows[0]
+	if r.Owner == nil || r.Owner.Kind != "ReplicaSet" || r.Owner.Name != "web-rs" {
+		t.Fatalf("expected owner ReplicaSet/web-rs, got %+v", r.Owner)
+	}
+	if r.PodResources == nil || r.PodResources.Container != "app" || r.PodResources.CPURequest != "250m" || r.PodResources.MemoryLimit != "256Mi" {
+		t.Fatalf("expected main container podResources, got %+v", r.PodResources)
+	}
 }

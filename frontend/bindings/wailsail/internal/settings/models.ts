@@ -33,4 +33,9 @@ export interface Settings {
      * resource keys "group/resource"
      */
     "pinned": string[] | null;
+
+    /**
+     * per resource key column order
+     */
+    "columnOrders": { [_ in string]?: string[] | null } | null;
 }

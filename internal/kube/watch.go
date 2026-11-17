@@ -86,6 +86,9 @@ func (c *Clients) listTable(ctx context.Context, ref ResourceRef, namespace stri
 	cont := ""
 	for {
 		q := url.Values{"limit": {"500"}}
+		if ref.Kind == "Pod" {
+			q.Set("includeObject", "Object")
+		}
 		if cont != "" {
 			q.Set("continue", cont)
 		}
@@ -290,6 +293,9 @@ func (c *Clients) watchTable(ctx context.Context, ref ResourceRef, namespace, rv
 		"resourceVersion":     {rv},
 		"allowWatchBookmarks": {"true"},
 		"timeoutSeconds":      {"300"},
+	}
+	if ref.Kind == "Pod" {
+		q.Set("includeObject", "Object")
 	}
 	resp, err := c.get(ctx, ref.Path(namespace, ""), q, AcceptTable)
 	if err != nil {

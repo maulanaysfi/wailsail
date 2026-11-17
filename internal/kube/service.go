@@ -301,6 +301,10 @@ func (s *Service) GetDetail(contextName string, ref ResourceRef, namespace, name
 }
 
 type podMetricsPayload struct {
+	Metadata struct {
+		Name      string `json:"name"`
+		Namespace string `json:"namespace"`
+	} `json:"metadata"`
 	Containers []struct {
 		Name  string `json:"name"`
 		Usage struct {
@@ -312,6 +316,47 @@ type podMetricsPayload struct {
 
 type podMetricsListPayload struct {
 	Items []podMetricsPayload `json:"items"`
+}
+
+// PodMetrics returns live CPU and memory usage for pods in namespace (or all
+// namespaces when namespace == ""). Keys are both "namespace/pod/container"
+// and "namespace/pod" (using the first container). Missing metrics-server
+// returns an empty map without error.
+func (s *Service) PodMetrics(contextName, namespace string) (map[string]ContainerMetrics, error) {
+	c, err := s.mgr.For(contextName)
+	if err != nil {
+		return nil, err
+	}
+	req := c.Typed.CoreV1().RESTClient().Get()
+	if namespace != "" {
+		req = req.AbsPath("/apis/metrics.k8s.io/v1beta1/namespaces", namespace, "pods")
+	} else {
+		req = req.AbsPath("/apis/metrics.k8s.io/v1beta1/pods")
+	}
+	raw, err := req.DoRaw(s.baseCtx)
+	if err != nil {
+		return map[string]ContainerMetrics{}, nil
+	}
+	return parseAllPodsMetricsJSON(raw), nil
+}
+
+func parseAllPodsMetricsJSON(raw []byte) map[string]ContainerMetrics {
+	var list podMetricsListPayload
+	if err := json.Unmarshal(raw, &list); err != nil || len(list.Items) == 0 {
+		return map[string]ContainerMetrics{}
+	}
+	out := make(map[string]ContainerMetrics, len(list.Items)*2)
+	for _, item := range list.Items {
+		podKey := item.Metadata.Namespace + "/" + item.Metadata.Name
+		for i, ct := range item.Containers {
+			u := parseContainerUsage(ct.Usage.CPU, ct.Usage.Memory)
+			out[podKey+"/"+ct.Name] = u
+			if i == 0 {
+				out[podKey] = u
+			}
+		}
+	}
+	return out
 }
 
 func (s *Service) fetchObjectMetrics(c *Clients, kind, namespace, name string, obj map[string]any) map[string]ContainerMetrics {

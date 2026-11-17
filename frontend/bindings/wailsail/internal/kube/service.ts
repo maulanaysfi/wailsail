@@ -97,6 +97,16 @@ export function PodContainers(contextName: string, $namespace: string, pod: stri
 }
 
 /**
+ * PodMetrics returns live CPU and memory usage for pods in namespace (or all
+ * namespaces when namespace == ""). Keys are both "namespace/pod/container"
+ * and "namespace/pod" (using the first container). Missing metrics-server
+ * returns an empty map without error.
+ */
+export function PodMetrics(contextName: string, $namespace: string): $CancellablePromise<{ [_ in string]?: $models.ContainerMetrics } | null> {
+    return $Call.ByID(3387424442, contextName, $namespace);
+}
+
+/**
  * Reload re-reads kubeconfig and drops cached clients and watches.
  */
 export function Reload(): $CancellablePromise<void> {

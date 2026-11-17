@@ -60,14 +60,32 @@ type Column struct {
 	Priority    int32  `json:"priority"`
 }
 
+// OwnerRef identifies the controlling owner of an object, if any.
+type OwnerRef struct {
+	APIVersion string `json:"apiVersion"`
+	Kind       string `json:"kind"`
+	Name       string `json:"name"`
+}
+
+// PodResources holds requests and limits for a pod's main container.
+type PodResources struct {
+	Container     string `json:"container,omitempty"`
+	CPURequest    string `json:"cpuRequest,omitempty"`
+	CPULimit      string `json:"cpuLimit,omitempty"`
+	MemoryRequest string `json:"memoryRequest,omitempty"`
+	MemoryLimit   string `json:"memoryLimit,omitempty"`
+}
+
 // Row is a compact, display-ready view of one object.
 type Row struct {
-	Key       string   `json:"key"`
-	UID       string   `json:"uid"`
-	Name      string   `json:"name"`
-	Namespace string   `json:"namespace"`
-	Created   string   `json:"created"`
-	Cells     []string `json:"cells"`
+	Key          string        `json:"key"`
+	UID          string        `json:"uid"`
+	Name         string        `json:"name"`
+	Namespace    string        `json:"namespace"`
+	Created      string        `json:"created"`
+	Cells        []string      `json:"cells"`
+	Owner        *OwnerRef     `json:"owner,omitempty"`
+	PodResources *PodResources `json:"podResources,omitempty"`
 }
 
 // key returns a stable identity for a row (UID, or namespace/name fallback).
@@ -121,6 +139,15 @@ func cellString(v any) string {
 type objectMeta struct {
 	Kind     string            `json:"kind"`
 	Metadata metav1.ObjectMeta `json:"metadata"`
+	Spec     struct {
+		Containers []struct {
+			Name      string `json:"name"`
+			Resources struct {
+				Requests map[string]string `json:"requests"`
+				Limits   map[string]string `json:"limits"`
+			} `json:"resources"`
+		} `json:"containers"`
+	} `json:"spec"`
 }
 
 // rowFromMeta builds identity fields from an object's metadata.
@@ -128,6 +155,16 @@ func rowFromMeta(m metav1.ObjectMeta) Row {
 	r := Row{UID: string(m.UID), Name: m.Name, Namespace: m.Namespace}
 	if !m.CreationTimestamp.IsZero() {
 		r.Created = m.CreationTimestamp.UTC().Format("2006-01-02T15:04:05Z")
+	}
+	if len(m.OwnerReferences) > 0 {
+		pick := m.OwnerReferences[0]
+		for _, o := range m.OwnerReferences {
+			if o.Controller != nil && *o.Controller {
+				pick = o
+				break
+			}
+		}
+		r.Owner = &OwnerRef{APIVersion: pick.APIVersion, Kind: pick.Kind, Name: pick.Name}
 	}
 	r.Key = r.key()
 	return r
@@ -172,6 +209,16 @@ func parseTable(raw []byte, prev *tableResult) (*tableResult, error) {
 			_ = json.Unmarshal(tr.Object.Raw, &om)
 		}
 		row := rowFromMeta(om.Metadata)
+		if len(om.Spec.Containers) > 0 {
+			c0 := om.Spec.Containers[0]
+			row.PodResources = &PodResources{
+				Container:     c0.Name,
+				CPURequest:    c0.Resources.Requests["cpu"],
+				CPULimit:      c0.Resources.Limits["cpu"],
+				MemoryRequest: c0.Resources.Requests["memory"],
+				MemoryLimit:   c0.Resources.Limits["memory"],
+			}
+		}
 		if om.Metadata.ResourceVersion != "" {
 			res.ResourceVersion = om.Metadata.ResourceVersion
 		}

@@ -19,8 +19,9 @@ type Settings struct {
 	LastNamespace   map[string]string `json:"lastNamespace"` // per context; "" = all namespaces
 	LogTailLines    int64             `json:"logTailLines"`
 	LogTimestamps   bool              `json:"logTimestamps"`
-	ShowWide        bool              `json:"showWide"`
-	Pinned          []string          `json:"pinned"` // resource keys "group/resource"
+	ShowWide        bool                `json:"showWide"`
+	Pinned          []string            `json:"pinned"`       // resource keys "group/resource"
+	ColumnOrders    map[string][]string `json:"columnOrders"` // per resource key column order
 }
 
 // DefaultScale is the UI scale used when none (or an invalid one) is stored.
@@ -49,6 +50,7 @@ func Defaults() Settings {
 		LogTailLines:    500,
 		ShowWide:        true,
 		Pinned:          []string{},
+		ColumnOrders:    map[string][]string{},
 	}
 }
 
@@ -74,6 +76,9 @@ func (st *Settings) normalize() {
 	}
 	if st.Pinned == nil {
 		st.Pinned = []string{}
+	}
+	if st.ColumnOrders == nil {
+		st.ColumnOrders = map[string][]string{}
 	}
 }
 
