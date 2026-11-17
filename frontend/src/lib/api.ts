@@ -30,6 +30,18 @@ export interface Column {
   description: string;
   priority: number;
 }
+export interface OwnerRef {
+  apiVersion: string;
+  kind: string;
+  name: string;
+}
+export interface PodResources {
+  container?: string;
+  cpuRequest?: string;
+  cpuLimit?: string;
+  memoryRequest?: string;
+  memoryLimit?: string;
+}
 export interface Row {
   key: string;
   uid: string;
@@ -37,6 +49,8 @@ export interface Row {
   namespace: string;
   created: string;
   cells: string[];
+  owner?: OwnerRef;
+  podResources?: PodResources;
 }
 export interface WatchEvent {
   reset?: boolean;

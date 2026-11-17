@@ -85,6 +85,7 @@ flowchart LR
   - `Watch(contextName string, ref ResourceRef, namespace, streamID string) (string, error)` — requests `meta.k8s.io/v1` `Table` rows, coalesces updates every 150ms, relists on `410 Gone`, emits `WatchEvent` (`reset`, `columns`, `upserts`, `deletes`, `error`)
   - `StopWatch(streamID string)`
   - `GetDetail(contextName string, ref ResourceRef, namespace, name string) (ObjectDetail, error)` — returns structured object, YAML without `managedFields`, related Kubernetes events, and live container CPU/memory usage (`ContainerMetrics` via `metrics.k8s.io/v1beta1`)
+  - `PodMetrics(contextName, namespace string) (map[string]ContainerMetrics, error)` — returns live container CPU/memory usage for pods in a namespace (or all namespaces)
   - `ObjectEvents(contextName, kind, namespace, name string) ([]EventInfo, error)`
   - `GetYAML(contextName string, ref ResourceRef, namespace, name string) (string, error)`
   - `Apply(contextName, manifest, defaultNamespace string) ([]ApplyResult, error)` — multi-document YAML/JSON + `List` expansion via Server-Side Apply (`fieldManager: "wailsail"`)
@@ -107,7 +108,7 @@ flowchart LR
 
 ### `internal/settings`
 - `Service`: `Get() (Settings, error)`, `Save(st Settings) error` with atomic temp-file writes to `<UserConfigDir>/wailsail/settings.json`, and `DefaultKubeconfig() string`.
-- `Settings` includes `scale` (UI zoom percent: 50/75/100/125/150, default 100, applied via `Window.SetZoom`) and `kubeconfigPaths` (default `[<home>/.kube/config]`, applied at startup in `main.go`).
+- `Settings` includes `scale` (UI zoom percent: 50/75/100/125/150, default 100, applied via `Window.SetZoom` or CSS `zoom` for `<100%`), `kubeconfigPaths` (default `[<home>/.kube/config]`, applied at startup in `main.go`), and `columnOrders` (persisted per-resource table column ordering).
 
 ### Frontend conventions
 - Font: bundled Google Sans Flex (`frontend/public/fonts/`, OFL) via `--sans`.

@@ -43,6 +43,7 @@ const defaultSettings: SettingsData = {
   logTimestamps: false,
   showWide: true,
   pinned: [],
+  columnOrders: {},
 };
 
 export const scaleOptions = [50, 75, 100, 125, 150] as const;
@@ -174,6 +175,25 @@ class AppState {
   selectResource(r: ResourceType) {
     this.current = r;
     this.selection = null;
+  }
+
+  jumpToOwner(owner: { apiVersion?: string; kind: string; name: string } | undefined | null, namespace: string) {
+    if (!owner?.kind || !owner?.name) return;
+    const parts = (owner.apiVersion ?? "").split("/");
+    const group = parts.length > 1 ? parts[0] : "";
+    const target =
+      this.resources.find((r) => r.kind === owner.kind && (!owner.apiVersion || r.group === group)) ??
+      this.resources.find((r) => r.kind === owner.kind);
+    if (!target) {
+      this.toast(`Owner resource kind ${owner.kind} not found`, "error");
+      return;
+    }
+    const ns = target.namespaced ? namespace : "";
+    if (target.namespaced && this.namespace !== "" && this.namespace !== ns) {
+      this.namespace = ns;
+    }
+    this.current = target;
+    this.selection = { type: target, namespace: ns, name: owner.name };
   }
 
   isPinned(r: ResourceType) {

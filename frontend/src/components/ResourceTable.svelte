@@ -1,18 +1,30 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { Kube, newStreamId, on, topics, errorMessage, type Column, type Row, type WatchEvent } from "../lib/api";
+  import {
+    Kube,
+    newStreamId,
+    on,
+    topics,
+    errorMessage,
+    type Column,
+    type ContainerMetrics,
+    type Row,
+    type WatchEvent,
+  } from "../lib/api";
   import { app, cssZoom, refOf } from "../lib/store.svelte";
-  import { age, compareCells, toneFor } from "../lib/format";
+  import { age, buildResourceMeter, compareCells, toneFor, type ResourceMeter } from "../lib/format";
   import { kindKey, resourceKey } from "../lib/resources";
 
   const ROW_H = 32;
   const MIN_COL_W = 48;
-  const ACTIONS_COL_W = 112;
+
+  const ownableKinds = new Set(["/Pod", "apps/ReplicaSet", "batch/Job"]);
 
   const rows = new Map<string, Row>();
   let version = $state(0);
   let totalRows = $state(0);
   let columns = $state<Column[]>([]);
+  let podMetrics = $state<Record<string, ContainerMetrics>>({});
   let loading = $state(true);
   let error = $state("");
   let filter = $state("");
@@ -21,9 +33,7 @@
   let scrollTop = $state(0);
   let viewportH = $state(600);
 
-  // Per-resource custom column widths and custom column order.
   let colWidths = $state<Record<string, number>>({});
-  let colOrders = $state<Record<string, string[]>>({});
   let resizingKey = $state("");
   let draggingKey = $state("");
   let dropTargetKey = $state("");
@@ -31,7 +41,11 @@
   let headerRowEl: HTMLTableRowElement | undefined = $state();
 
   const allNamespaces = $derived(!!app.current?.namespaced && app.namespace === "");
-  const isPod = $derived(app.current ? kindKey(app.current) === "/Pod" : false);
+  const curKindKey = $derived(app.current ? kindKey(app.current) : "");
+  const isPod = $derived(curKindKey === "/Pod");
+  const hasOwnerAction = $derived(ownableKinds.has(curKindKey));
+  const hasActionsCol = $derived(isPod || hasOwnerAction);
+  const actionsColW = $derived(isPod ? 208 : 120);
   const resScopeKey = $derived(app.current ? resourceKey(app.current) : "_");
 
   // Start a watch whenever the context, resource type or namespace changes.
@@ -73,12 +87,56 @@
     };
   });
 
+  // Poll live Pod metrics while on the Pod page.
+  $effect(() => {
+    const ctx = app.context;
+    const ns = app.namespace;
+    const podView = isPod;
+    if (!ctx || !podView) {
+      podMetrics = {};
+      return;
+    }
+    let cancelled = false;
+    const pull = () => {
+      Kube.PodMetrics(ctx, ns)
+        .then((m) => {
+          if (!cancelled) podMetrics = (m as Record<string, ContainerMetrics>) ?? {};
+        })
+        .catch(() => {});
+    };
+    pull();
+    const timer = setInterval(pull, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  });
+
+  function podUsageFor(r: Row): ContainerMetrics | undefined {
+    const base = `${r.namespace}/${r.name}`;
+    const mainName = r.podResources?.container;
+    if (mainName && podMetrics[`${base}/${mainName}`]) {
+      return podMetrics[`${base}/${mainName}`];
+    }
+    return podMetrics[base];
+  }
+
+  function podMeterFor(r: Row, kind: "cpu" | "memory"): ResourceMeter {
+    const u = podUsageFor(r);
+    const pr = r.podResources;
+    if (kind === "cpu") {
+      return buildResourceMeter("cpu", u?.cpuMilli ?? 0, pr?.cpuRequest, pr?.cpuLimit);
+    }
+    return buildResourceMeter("memory", u?.memoryBytes ?? 0, pr?.memoryRequest, pr?.memoryLimit);
+  }
+
   interface DisplayCol {
     key: string;
+    id: string;
     label: string;
-    title: string;
     defaultWidth: number;
     get: (r: Row) => string;
+    meter?: "cpu" | "memory";
     status?: boolean;
   }
 
@@ -86,6 +144,7 @@
     const n = name.toLowerCase();
     if (index === 0 || n === "name") return 240;
     if (n === "namespace") return 136;
+    if (n === "cpu usage" || n === "memory usage") return 168;
     if (n === "ready" || n === "restarts" || n === "age" || n === "desired" || n === "current" || n === "up-to-date" || n === "available") return 88;
     if (n === "status" || n === "phase" || n === "type" || n === "roles") return 120;
     if (n === "ip" || n === "cluster-ip" || n === "external-ip" || n === "internal-ip") return 136;
@@ -94,14 +153,13 @@
     return 144;
   }
 
-  // Always include all columns (kubectl get -o wide equivalent).
   const baseCols = $derived.by<DisplayCol[]>(() => {
     const out: DisplayCol[] = [];
     columns.forEach((c, i) => {
       out.push({
         key: `c${i}`,
+        id: c.name,
         label: c.name,
-        title: c.description || c.name,
         defaultWidth: defaultWidthFor(c.name, i),
         get: (r) => r.cells[i] ?? "",
         status: c.name === "Status" || c.name === "Phase",
@@ -109,20 +167,38 @@
       if (i === 0 && allNamespaces) {
         out.push({
           key: "namespace",
+          id: "Namespace",
           label: "Namespace",
-          title: "Namespace",
           defaultWidth: defaultWidthFor("Namespace", -1),
           get: (r) => r.namespace,
         });
       }
     });
     if (columns.length === 0) {
-      out.push({ key: "name", label: "Name", title: "Name", defaultWidth: 240, get: (r) => r.name });
+      out.push({ key: "name", id: "Name", label: "Name", defaultWidth: 240, get: (r) => r.name });
+    }
+    if (isPod) {
+      out.push({
+        key: "cpu-usage",
+        id: "CPU Usage",
+        label: "CPU Usage",
+        defaultWidth: 168,
+        meter: "cpu",
+        get: (r) => podMeterFor(r, "cpu").usedText,
+      });
+      out.push({
+        key: "memory-usage",
+        id: "Memory Usage",
+        label: "Memory Usage",
+        defaultWidth: 168,
+        meter: "memory",
+        get: (r) => podMeterFor(r, "memory").usedText,
+      });
     }
     out.push({
       key: "age",
+      id: "Age",
       label: "Age",
-      title: "Time since creation",
       defaultWidth: 88,
       get: (r) => age(r.created, app.now),
     });
@@ -130,18 +206,25 @@
   });
 
   const displayCols = $derived.by<DisplayCol[]>(() => {
-    const order = colOrders[resScopeKey];
+    const order = app.settings.columnOrders?.[resScopeKey];
     if (!order || order.length === 0) return baseCols;
-    const byKey = new Map(baseCols.map((c) => [c.key, c]));
+    const byId = new Map<string, DisplayCol>();
+    for (const c of baseCols) {
+      byId.set(c.id, c);
+      byId.set(c.key, c);
+    }
+    const used = new Set<string>();
     const ordered: DisplayCol[] = [];
-    for (const k of order) {
-      const col = byKey.get(k);
-      if (col) {
+    for (const token of order) {
+      const col = byId.get(token);
+      if (col && !used.has(col.key)) {
         ordered.push(col);
-        byKey.delete(k);
+        used.add(col.key);
       }
     }
-    for (const col of byKey.values()) ordered.push(col);
+    for (const col of baseCols) {
+      if (!used.has(col.key)) ordered.push(col);
+    }
     return ordered;
   });
 
@@ -154,7 +237,7 @@
   }
 
   const totalTableW = $derived(
-    displayCols.reduce((sum, c) => sum + colWidth(c), 0) + (isPod ? ACTIONS_COL_W : 0),
+    displayCols.reduce((sum, c) => sum + colWidth(c), 0) + (hasActionsCol ? actionsColW : 0),
   );
 
   function startColResize(e: PointerEvent, c: DisplayCol) {
@@ -217,11 +300,16 @@
       window.removeEventListener("pointerup", up);
       if (moved) {
         if (dropTargetKey && dropTargetKey !== c.key) {
-          const cur = displayCols.map((col) => col.key).filter((k) => k !== c.key);
-          const idx = cur.indexOf(dropTargetKey);
+          const cur = displayCols.filter((col) => col.key !== c.key);
+          const idx = cur.findIndex((col) => col.key === dropTargetKey);
           if (idx !== -1) {
-            cur.splice(dropAfter ? idx + 1 : idx, 0, c.key);
-            colOrders[resScopeKey] = cur;
+            cur.splice(dropAfter ? idx + 1 : idx, 0, c);
+            app.saveSettings({
+              columnOrders: {
+                ...(app.settings.columnOrders ?? {}),
+                [resScopeKey]: cur.map((col) => col.id),
+              },
+            });
           }
         }
         draggingKey = "";
@@ -249,6 +337,8 @@
     let cmp: (a: Row, b: Row) => number;
     if (key === "age") cmp = (a, b) => b.created.localeCompare(a.created);
     else if (key === "namespace") cmp = (a, b) => a.namespace.localeCompare(b.namespace) || a.name.localeCompare(b.name);
+    else if (key === "cpu-usage") cmp = (a, b) => (podUsageFor(a)?.cpuMilli ?? 0) - (podUsageFor(b)?.cpuMilli ?? 0) || a.name.localeCompare(b.name);
+    else if (key === "memory-usage") cmp = (a, b) => (podUsageFor(a)?.memoryBytes ?? 0) - (podUsageFor(b)?.memoryBytes ?? 0) || a.name.localeCompare(b.name);
     else if (key === "name" || key === "c0") cmp = (a, b) => compareCells(a.name, b.name) || a.namespace.localeCompare(b.namespace);
     else {
       const i = Number(key.slice(1));
@@ -272,6 +362,10 @@
 
   function select(r: Row) {
     if (!app.current) return;
+    if (isSelected(r)) {
+      app.selection = null;
+      return;
+    }
     app.selection = { type: app.current, namespace: r.namespace, name: r.name };
   }
 
@@ -284,7 +378,28 @@
     e.stopPropagation();
     app.openDock({ kind, title: r.name, context: app.context, namespace: r.namespace, pod: r.name });
   }
+
+  function jumpOwner(r: Row, e: MouseEvent) {
+    e.stopPropagation();
+    app.jumpToOwner(r.owner, r.namespace);
+  }
 </script>
+
+{#snippet cellMeter(meter: ResourceMeter)}
+  {#if meter.showBar}
+    <div class="cell-meter">
+      <div class="meter-track" title={meter.hoverText}>
+        <div class={`meter-fill tone-bg-${meter.tone}`} style={`width:${meter.usedPct}%`}></div>
+        {#if meter.requestMarkPct !== null}
+          <span class="meter-req-mark" style={`left:${meter.requestMarkPct}%`}></span>
+        {/if}
+      </div>
+      <span class="cell-meter-text">{meter.usedText}</span>
+    </div>
+  {:else}
+    <span class="cell-meter-plain">{meter.usedText}</span>
+  {/if}
+{/snippet}
 
 <section class="table-pane" class:resizing={resizingKey !== ""} class:dragging={draggingKey !== ""}>
   <div class="toolbar">
@@ -303,7 +418,7 @@
         {#each displayCols as c (c.key)}
           <col style={`width:${colWidth(c)}px`} />
         {/each}
-        {#if isPod}<col style={`width:${ACTIONS_COL_W}px`} />{/if}
+        {#if hasActionsCol}<col style={`width:${actionsColW}px`} />{/if}
       </colgroup>
       <thead>
         <tr bind:this={headerRowEl}>
@@ -329,7 +444,7 @@
               ></span>
             </th>
           {/each}
-          {#if isPod}<th class="actions-h"></th>{/if}
+          {#if hasActionsCol}<th class="actions-h"></th>{/if}
         </tr>
       </thead>
       <tbody>
@@ -337,17 +452,33 @@
         {#each visible as r (r.key)}
           <tr class:selected={isSelected(r)} onclick={() => select(r)}>
             {#each displayCols as c (c.key)}
-              {@const v = c.get(r)}
-              <td class={c.status ? `tone-${toneFor(v)}` : ""} class:name-col={c.key === "c0" || c.key === "name"}>{v}</td>
+              {#if c.meter}
+                <td>{@render cellMeter(podMeterFor(r, c.meter))}</td>
+              {:else}
+                {@const v = c.get(r)}
+                <td class={c.status ? `tone-${toneFor(v)}` : ""} class:name-col={c.key === "c0" || c.key === "name"}>{v}</td>
+              {/if}
             {/each}
-            {#if isPod}
+            {#if hasActionsCol}
               <td class="actions">
-                <button class="mini" onclick={(e) => openPod("logs", r, e)} title={`Stream container logs for pod ${r.name}`}>
-                  Logs
-                </button>
-                <button class="mini" onclick={(e) => openPod("shell", r, e)} title={`Open interactive shell in pod ${r.name}`}>
-                  Shell
-                </button>
+                {#if hasOwnerAction}
+                  <button
+                    class="mini"
+                    disabled={!r.owner}
+                    onclick={(e) => jumpOwner(r, e)}
+                    title={r.owner ? `Jump to owner ${r.owner.kind}/${r.owner.name}` : "No owner reference"}
+                  >
+                    Jump to Owner
+                  </button>
+                {/if}
+                {#if isPod}
+                  <button class="mini" onclick={(e) => openPod("logs", r, e)} title={`Stream container logs for pod ${r.name}`}>
+                    Logs
+                  </button>
+                  <button class="mini" onclick={(e) => openPod("shell", r, e)} title={`Open interactive shell in pod ${r.name}`}>
+                    Shell
+                  </button>
+                {/if}
               </td>
             {/if}
           </tr>
@@ -489,6 +620,22 @@
   }
   td.name-col {
     color: var(--text-strong);
+  }
+  .cell-meter {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .cell-meter .meter-track {
+    flex: 1;
+    min-width: 48px;
+  }
+  .cell-meter-text,
+  .cell-meter-plain {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
   }
   .actions-h,
   .actions {

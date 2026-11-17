@@ -20,6 +20,7 @@
 
   const kk = $derived(kindKey(sel.type));
   const isPod = $derived(kk === "/Pod");
+  const canJumpOwner = $derived(kk === "/Pod" || kk === "apps/ReplicaSet" || kk === "batch/Job");
   const canForward = $derived(kk === "/Pod" || kk === "/Service");
   const canScale = $derived(scalableKinds.has(kk));
   const canRestart = $derived(restartableKinds.has(kk));
@@ -166,6 +167,7 @@
   const labels = $derived(Object.entries((metadata.labels ?? {}) as Record<string, string>));
   const annotations = $derived(Object.entries((metadata.annotations ?? {}) as Record<string, string>));
   const owners = $derived((metadata.ownerReferences ?? []) as Array<Record<string, any>>);
+  const primaryOwner = $derived(owners.find((o) => o.controller) ?? owners[0] ?? null);
   const finalizers = $derived((metadata.finalizers ?? []) as string[]);
   const conditions = $derived((status.conditions ?? []) as Array<Record<string, any>>);
 
@@ -444,6 +446,20 @@
       </button>
     </div>
 
+    {#if canJumpOwner || owners.length > 0}
+      <button
+        disabled={!primaryOwner}
+        onclick={() =>
+          primaryOwner &&
+          app.jumpToOwner(
+            { apiVersion: primaryOwner.apiVersion, kind: primaryOwner.kind, name: primaryOwner.name },
+            sel.namespace,
+          )}
+        title={primaryOwner ? `Jump to owner ${primaryOwner.kind}/${primaryOwner.name}` : "No owner reference"}
+      >
+        Jump to Owner
+      </button>
+    {/if}
     {#if isPod}
       <button onclick={() => openDock("logs")} title={`Stream container logs for pod ${sel.name}`}>Logs</button>
       <button onclick={() => openDock("shell")} title={`Open interactive shell in pod ${sel.name}`}>Shell</button>
@@ -896,35 +912,6 @@
   }
   .meter-label {
     color: var(--muted);
-  }
-  .meter-track {
-    position: relative;
-    height: var(--space-2);
-    background: var(--track);
-    border-radius: 999px;
-    overflow: hidden;
-  }
-  .meter-fill {
-    height: 100%;
-    border-radius: 999px;
-  }
-  .tone-bg-ok {
-    background: var(--ok);
-  }
-  .tone-bg-warn {
-    background: var(--warn);
-  }
-  .tone-bg-bad {
-    background: var(--bad);
-  }
-  .meter-req-mark {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    width: 2px;
-    margin-left: -1px;
-    background: var(--mark-request);
-    pointer-events: none;
   }
   .meter-val,
   .meter-plain {

@@ -11,9 +11,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Added **Overview** and **YAML** tabs when inspecting a selected resource (`GetDetail` and `ObjectEvents` on `kube.Service`).
   - Displays structured **Metadata** (name, namespace, API version/kind, creation age & timestamp, UID, resourceVersion/generation, ownerReferences, finalizers, labels, and annotations), resource-specific **Specification & status** summaries, **Containers**, **Conditions**, and related Kubernetes **Events**.
 - **Container Resource Usage Progress Bars**:
-  - Fetches live container CPU (`m`) and memory (`bytes`) usage via `metrics.k8s.io/v1beta1` for Pods and workload controllers.
+  - Fetches live container CPU (`m`) and memory (`bytes`) usage via `metrics.k8s.io/v1beta1` for Pods and workload controllers (`GetDetail`, `PodMetrics`).
+  - Added **CPU Usage** and **Memory Usage** columns to the Pod table displaying the main container's resource usage with the same progress bar as `DetailDrawer`.
   - Renders rounded-edge progress bars on a theme-matched grey track representing resource limits, with a white vertical line marker for resource requests (`request / limit`, or fixed at `25%` when only a request is defined so `100%` equals `4 × request`).
   - Falls back to plain-text usage when neither request nor limit is defined, omits the vertical marker when only a limit is defined, colors the bar indicator by usage threshold (`<80%` green, `80%–94.99%` yellow, `>=95%` red), and shows `Used / Request / Limit` on hover.
+- **Jump to Owner Navigation**:
+  - Added **Jump to Owner** button in the resource table and `DetailDrawer` for owned objects (`Pod`, `ReplicaSet`, `Job`, etc.), navigating directly to the controlling owner resource and disabling the button when no owner reference exists (such as standalone pods).
+- **Persistent Column Order**:
+  - Custom column orders configured by dragging table headers are now persisted per resource type in `settings.json` (`columnOrders`) across restarts.
+- **Row Selection Toggle**:
+  - Clicking an already-selected object row in `ResourceTable` now toggles `DetailDrawer` closed.
 - **Settings Modal (`SettingsModal.svelte`)**:
   - Added **Screen scale** selector (`50%`, `75%`, `100%`, `125%`, `150%`, default `100%`).
   - Added removable **Kubeconfig** file and folder list (defaulting to `$HOME/.kube/config` on Linux/macOS and `%USERPROFILE%\.kube\config` on Windows) with `~` and environment variable expansion, non-recursive folder scanning for valid kubeconfigs, native file/folder picker dialogs, and a **Reset to default** action.

@@ -188,6 +188,36 @@ textarea:focus {
   color: var(--muted);
 }
 
+.meter-track {
+  position: relative;
+  height: var(--space-2);
+  background: var(--track);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.meter-fill {
+  height: 100%;
+  border-radius: 999px;
+}
+.tone-bg-ok {
+  background: var(--ok);
+}
+.tone-bg-warn {
+  background: var(--warn);
+}
+.tone-bg-bad {
+  background: var(--bad);
+}
+.meter-req-mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--mark-request);
+  pointer-events: none;
+}
+
 .backdrop {
   position: fixed;
   inset: 0;
