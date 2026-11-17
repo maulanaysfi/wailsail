@@ -217,6 +217,9 @@ textarea:focus {
   background: var(--mark-request);
   pointer-events: none;
 }
+.meter-req-mark.warn {
+  background: var(--warn);
+}
 
 .backdrop {
   position: fixed;

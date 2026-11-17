@@ -403,7 +403,7 @@
       <div class="meter-track" title={meter.hoverText}>
         <div class={`meter-fill tone-bg-${meter.tone}`} style={`width:${meter.usedPct}%`}></div>
         {#if meter.requestMarkPct !== null}
-          <span class="meter-req-mark" style={`left:${meter.requestMarkPct}%`}></span>
+          <span class="meter-req-mark" class:warn={meter.requestMarkWarn} style={`left:${meter.requestMarkPct}%`}></span>
         {/if}
       </div>
       <span class="meter-val mono">{meter.usedText} / {meter.limitText !== "none" ? meter.limitText : meter.scaleMaxText}</span>

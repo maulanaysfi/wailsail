@@ -12,8 +12,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Displays structured **Metadata** (name, namespace, API version/kind, creation age & timestamp, UID, resourceVersion/generation, ownerReferences, finalizers, labels, and annotations), resource-specific **Specification & status** summaries, **Containers**, **Conditions**, and related Kubernetes **Events**.
 - **Container Resource Usage Progress Bars**:
   - Fetches live container CPU (`m`) and memory (`bytes`) usage via `metrics.k8s.io/v1beta1` for Pods and workload controllers (`GetDetail`, `PodMetrics`).
-  - Added **CPU Usage** and **Memory Usage** columns to the Pod table displaying the main container's resource usage with the same progress bar as `DetailDrawer`.
-  - Renders rounded-edge progress bars on a theme-matched grey track representing resource limits, with a white vertical line marker for resource requests (`request / limit`, or fixed at `25%` when only a request is defined so `100%` equals `4 × request`).
+  - Added **CPU Usage** and **Memory Usage** columns to the Pod table (placed right after the `Status` column) displaying the main container's resource usage with the same progress bar as `DetailDrawer`.
+  - Renders rounded-edge progress bars on a theme-matched grey track representing resource limits, with a vertical line marker for resource requests (white at `request / limit` when both request and limit are defined, or yellow at `25%` when only a request is defined so `100%` equals `4 × request`).
   - Falls back to plain-text usage (`N/A` when metrics are unavailable) when neither request nor limit is defined, omits the vertical marker when only a limit is defined, colors the bar indicator by usage threshold (`<80%` green, `80%–94.99%` yellow, `>=95%` red), and shows `Used / Request / Limit` on hover.
 - **Jump to Owner Navigation**:
   - Added **Jump to Owner** button in the resource table and `DetailDrawer` for owned objects (`Pod`, `ReplicaSet`, `Job`, etc.), navigating directly to the controlling owner resource and disabling the button when no owner reference exists (such as standalone pods).

@@ -13,14 +13,14 @@
 
 ## Features
 
-- **Contexts & Namespaces** — Loads your merged kubeconfig (`$KUBECONFIG` / `~/.kube/config`), switches clusters quickly, remembers per-context namespaces, and displays cluster server versions.
+- **Contexts, Namespaces & Custom Kubeconfigs** — Loads merged kubeconfigs from custom files and scanned folders (defaulting to `~/.kube/config` plus `$KUBECONFIG`), switches clusters quickly, remembers per-context namespaces, and displays cluster server versions.
 - **Discovery-Driven Resource Browser** — Automatically discovers core and custom API resources (`CRDs`), groups them cleanly in the sidebar, and lets you pin favorite resource types.
-- **Live Watch Tables** — Streams server-side `meta.k8s.io/v1` `Table` views with 150ms batched updates, automatic relist on `410 Gone`, wide-column toggle, text filtering, column sorting, and virtualized scrolling.
-- **YAML Inspector & Server-Side Apply** — View any resource without noisy `managedFields`, edit inline with `Tab` indentation and `Ctrl/Cmd+S` apply, create/apply multi-document YAML or JSON manifests, or trigger scale, rollout restart, and delete actions.
+- **Live Watch Tables** — Streams server-side `meta.k8s.io/v1` `Table` views with 150ms batched updates, automatic relist on `410 Gone`, wide columns by default, draggable & resizable columns (persisted across restarts), live Pod CPU & memory usage meters, and one-click `Jump to Owner` navigation.
+- **Resource Overview, Events & YAML Inspector** — Inspect structured metadata, workload/service/node specifications, live container CPU & memory progress bars (`metrics.k8s.io/v1beta1`), conditions, and object-related Kubernetes events, or switch to the YAML tab to edit inline (`Tab` indentation, `Ctrl/Cmd+S` Server-Side Apply) and trigger scale, rollout restart, and delete actions.
 - **Live Container Logs** — Follow pod/init/ephemeral container logs with tail selection, timestamps, previous container logs, pause/resume, and real-time line filtering.
 - **Interactive Exec Terminal** — Open container shells inside a bottom dock powered by `@xterm/xterm` with auto-fit resizing and automatic `bash` / `sh` detection.
 - **Port Forwarding** — Forward Pod or Service ports to `127.0.0.1` (auto-assigning local ports when `0`) with live status tracking and one-click stop.
-- **Persistent Preferences & Themes** — Light, Dark, and System themes plus last context, per-context namespace, pinned resources, and log defaults persisted to `<UserConfigDir>/wailsail/settings.json`.
+- **Persistent Preferences, Scaling & Themes** — Light, Dark, and System themes, UI screen scale (`50%`–`150%`), custom kubeconfig paths, column orders/widths, and per-context state persisted to `<UserConfigDir>/wailsail/settings.json`.
 
 ---
 

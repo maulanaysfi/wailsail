@@ -155,14 +155,37 @@
 
   const baseCols = $derived.by<DisplayCol[]>(() => {
     const out: DisplayCol[] = [];
+    const podUsageCols: DisplayCol[] = isPod
+      ? [
+          {
+            key: "cpu-usage",
+            id: "CPU Usage",
+            label: "CPU Usage",
+            defaultWidth: 168,
+            meter: "cpu",
+            get: (r) => podMeterFor(r, "cpu").usedText,
+          },
+          {
+            key: "memory-usage",
+            id: "Memory Usage",
+            label: "Memory Usage",
+            defaultWidth: 168,
+            meter: "memory",
+            get: (r) => podMeterFor(r, "memory").usedText,
+          },
+        ]
+      : [];
+    let insertedUsage = false;
+
     columns.forEach((c, i) => {
+      const isStatus = c.name === "Status" || c.name === "Phase";
       out.push({
         key: `c${i}`,
         id: c.name,
         label: c.name,
         defaultWidth: defaultWidthFor(c.name, i),
         get: (r) => r.cells[i] ?? "",
-        status: c.name === "Status" || c.name === "Phase",
+        status: isStatus,
       });
       if (i === 0 && allNamespaces) {
         out.push({
@@ -173,27 +196,16 @@
           get: (r) => r.namespace,
         });
       }
+      if (isStatus && !insertedUsage && podUsageCols.length) {
+        out.push(...podUsageCols);
+        insertedUsage = true;
+      }
     });
     if (columns.length === 0) {
       out.push({ key: "name", id: "Name", label: "Name", defaultWidth: 240, get: (r) => r.name });
     }
-    if (isPod) {
-      out.push({
-        key: "cpu-usage",
-        id: "CPU Usage",
-        label: "CPU Usage",
-        defaultWidth: 168,
-        meter: "cpu",
-        get: (r) => podMeterFor(r, "cpu").usedText,
-      });
-      out.push({
-        key: "memory-usage",
-        id: "Memory Usage",
-        label: "Memory Usage",
-        defaultWidth: 168,
-        meter: "memory",
-        get: (r) => podMeterFor(r, "memory").usedText,
-      });
+    if (!insertedUsage && podUsageCols.length) {
+      out.push(...podUsageCols);
     }
     out.push({
       key: "age",
@@ -406,7 +418,7 @@
       <div class="meter-track" title={meter.hoverText}>
         <div class={`meter-fill tone-bg-${meter.tone}`} style={`width:${meter.usedPct}%`}></div>
         {#if meter.requestMarkPct !== null}
-          <span class="meter-req-mark" style={`left:${meter.requestMarkPct}%`}></span>
+          <span class="meter-req-mark" class:warn={meter.requestMarkWarn} style={`left:${meter.requestMarkPct}%`}></span>
         {/if}
       </div>
       <span class="cell-meter-text">{meter.usedText}</span>

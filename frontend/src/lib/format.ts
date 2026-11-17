@@ -131,6 +131,7 @@ export interface ResourceMeter {
   scaleMaxText: string;
   usedPct: number;
   requestMarkPct: number | null;
+  requestMarkWarn: boolean;
   tone: "ok" | "warn" | "bad";
   hoverText: string;
 }
@@ -172,6 +173,7 @@ export function buildResourceMeter(
       scaleMaxText: "",
       usedPct: 0,
       requestMarkPct: null,
+      requestMarkWarn: false,
       tone: "ok",
       hoverText: `Used: ${usedText} / Request: none / Limit: none`,
     };
@@ -180,6 +182,7 @@ export function buildResourceMeter(
   const maxVal = hasLim ? lim : req * 4;
   const scaleMaxText = fmt(maxVal);
   const requestMarkPct = hasReq ? (hasLim ? Math.min(100, (req / lim) * 100) : 25) : null;
+  const requestMarkWarn = hasReq && !hasLim;
   const rawPct = hasUsed && maxVal > 0 ? (used / maxVal) * 100 : 0;
   const usedPct = Math.max(0, Math.min(100, rawPct));
   const tone: "ok" | "warn" | "bad" = rawPct >= 95 ? "bad" : rawPct >= 80 ? "warn" : "ok";
@@ -193,6 +196,7 @@ export function buildResourceMeter(
     scaleMaxText,
     usedPct,
     requestMarkPct,
+    requestMarkWarn,
     tone,
     hoverText: `Used: ${usedText} / Request: ${requestText} / Limit: ${limitText}`,
   };
