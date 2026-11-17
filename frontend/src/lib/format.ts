@@ -145,19 +145,20 @@ export interface ResourceMeter {
  */
 export function buildResourceMeter(
   kind: "cpu" | "memory",
-  usedVal: number,
+  usedVal: number | null | undefined,
   reqRaw?: string | null,
   limRaw?: string | null,
 ): ResourceMeter {
   const parse = kind === "cpu" ? parseCPUMilli : parseMemoryBytes;
   const fmt = kind === "cpu" ? formatCPUMilli : formatMemoryBytes;
-  const used = Math.max(0, usedVal || 0);
+  const hasUsed = typeof usedVal === "number" && Number.isFinite(usedVal) && usedVal >= 0;
+  const used = hasUsed ? usedVal : 0;
   const req = parse(reqRaw);
   const lim = parse(limRaw);
   const hasReq = req > 0;
   const hasLim = lim > 0;
 
-  const usedText = fmt(used);
+  const usedText = hasUsed ? fmt(used) : "N/A";
   const requestText = hasReq ? (reqRaw?.trim() || fmt(req)) : "none";
   const limitText = hasLim ? (limRaw?.trim() || fmt(lim)) : "none";
 
@@ -179,7 +180,7 @@ export function buildResourceMeter(
   const maxVal = hasLim ? lim : req * 4;
   const scaleMaxText = fmt(maxVal);
   const requestMarkPct = hasReq ? (hasLim ? Math.min(100, (req / lim) * 100) : 25) : null;
-  const rawPct = maxVal > 0 ? (used / maxVal) * 100 : 0;
+  const rawPct = hasUsed && maxVal > 0 ? (used / maxVal) * 100 : 0;
   const usedPct = Math.max(0, Math.min(100, rawPct));
   const tone: "ok" | "warn" | "bad" = rawPct >= 95 ? "bad" : rawPct >= 80 ? "warn" : "ok";
 

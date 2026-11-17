@@ -14,11 +14,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Fetches live container CPU (`m`) and memory (`bytes`) usage via `metrics.k8s.io/v1beta1` for Pods and workload controllers (`GetDetail`, `PodMetrics`).
   - Added **CPU Usage** and **Memory Usage** columns to the Pod table displaying the main container's resource usage with the same progress bar as `DetailDrawer`.
   - Renders rounded-edge progress bars on a theme-matched grey track representing resource limits, with a white vertical line marker for resource requests (`request / limit`, or fixed at `25%` when only a request is defined so `100%` equals `4 × request`).
-  - Falls back to plain-text usage when neither request nor limit is defined, omits the vertical marker when only a limit is defined, colors the bar indicator by usage threshold (`<80%` green, `80%–94.99%` yellow, `>=95%` red), and shows `Used / Request / Limit` on hover.
+  - Falls back to plain-text usage (`N/A` when metrics are unavailable) when neither request nor limit is defined, omits the vertical marker when only a limit is defined, colors the bar indicator by usage threshold (`<80%` green, `80%–94.99%` yellow, `>=95%` red), and shows `Used / Request / Limit` on hover.
 - **Jump to Owner Navigation**:
   - Added **Jump to Owner** button in the resource table and `DetailDrawer` for owned objects (`Pod`, `ReplicaSet`, `Job`, etc.), navigating directly to the controlling owner resource and disabling the button when no owner reference exists (such as standalone pods).
-- **Persistent Column Order**:
-  - Custom column orders configured by dragging table headers are now persisted per resource type in `settings.json` (`columnOrders`) across restarts.
+- **Persistent Column Order & Widths**:
+  - Custom column orders (`columnOrders`) and resized column widths (`columnWidths`) are now persisted per resource type in `settings.json` across restarts.
 - **Row Selection Toggle**:
   - Clicking an already-selected object row in `ResourceTable` now toggles `DetailDrawer` closed.
 - **Settings Modal (`SettingsModal.svelte`)**:

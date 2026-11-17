@@ -44,6 +44,7 @@ const defaultSettings: SettingsData = {
   showWide: true,
   pinned: [],
   columnOrders: {},
+  columnWidths: {},
 };
 
 export const scaleOptions = [50, 75, 100, 125, 150] as const;

@@ -22,6 +22,7 @@ type Settings struct {
 	ShowWide        bool                `json:"showWide"`
 	Pinned          []string            `json:"pinned"`       // resource keys "group/resource"
 	ColumnOrders    map[string][]string `json:"columnOrders"` // per resource key column order
+	ColumnWidths    map[string]int      `json:"columnWidths"` // "<resourceKey>:<colLabel>" -> width in px
 }
 
 // DefaultScale is the UI scale used when none (or an invalid one) is stored.
@@ -51,6 +52,7 @@ func Defaults() Settings {
 		ShowWide:        true,
 		Pinned:          []string{},
 		ColumnOrders:    map[string][]string{},
+		ColumnWidths:    map[string]int{},
 	}
 }
 
@@ -79,6 +81,9 @@ func (st *Settings) normalize() {
 	}
 	if st.ColumnOrders == nil {
 		st.ColumnOrders = map[string][]string{}
+	}
+	if st.ColumnWidths == nil {
+		st.ColumnWidths = map[string]int{}
 	}
 }
 

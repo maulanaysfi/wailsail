@@ -125,9 +125,9 @@
     const u = podUsageFor(r);
     const pr = r.podResources;
     if (kind === "cpu") {
-      return buildResourceMeter("cpu", u?.cpuMilli ?? 0, pr?.cpuRequest, pr?.cpuLimit);
+      return buildResourceMeter("cpu", u ? u.cpuMilli : null, pr?.cpuRequest, pr?.cpuLimit);
     }
-    return buildResourceMeter("memory", u?.memoryBytes ?? 0, pr?.memoryRequest, pr?.memoryLimit);
+    return buildResourceMeter("memory", u ? u.memoryBytes : null, pr?.memoryRequest, pr?.memoryLimit);
   }
 
   interface DisplayCol {
@@ -229,11 +229,12 @@
   });
 
   function widthKey(c: DisplayCol): string {
-    return `${resScopeKey}:${c.label}`;
+    return `${resScopeKey}:${c.id}`;
   }
 
   function colWidth(c: DisplayCol): number {
-    return colWidths[widthKey(c)] ?? c.defaultWidth;
+    const wk = widthKey(c);
+    return colWidths[wk] ?? app.settings.columnWidths?.[wk] ?? c.defaultWidth;
   }
 
   const totalTableW = $derived(
@@ -257,6 +258,14 @@
       resizingKey = "";
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      if (colWidths[wk] !== undefined) {
+        app.saveSettings({
+          columnWidths: {
+            ...(app.settings.columnWidths ?? {}),
+            [wk]: colWidths[wk],
+          },
+        });
+      }
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
@@ -264,7 +273,13 @@
 
   function resetColWidth(e: MouseEvent, c: DisplayCol) {
     e.stopPropagation();
-    delete colWidths[widthKey(c)];
+    const wk = widthKey(c);
+    delete colWidths[wk];
+    const nextWidths = { ...(app.settings.columnWidths ?? {}) };
+    if (wk in nextWidths) {
+      delete nextWidths[wk];
+      app.saveSettings({ columnWidths: nextWidths });
+    }
   }
 
   function startHeaderPointer(e: PointerEvent, c: DisplayCol) {

@@ -373,8 +373,8 @@
       const req = c.resources?.requests ?? {};
       const lim = c.resources?.limits ?? {};
       const usage = metrics[c.name];
-      const cpu = buildResourceMeter("cpu", usage?.cpuMilli ?? 0, req.cpu, lim.cpu);
-      const memory = buildResourceMeter("memory", usage?.memoryBytes ?? 0, req.memory, lim.memory);
+      const cpu = buildResourceMeter("cpu", usage ? usage.cpuMilli : null, req.cpu, lim.cpu);
+      const memory = buildResourceMeter("memory", usage ? usage.memoryBytes : null, req.memory, lim.memory);
 
       return {
         name: c.name,

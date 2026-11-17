@@ -108,7 +108,7 @@ flowchart LR
 
 ### `internal/settings`
 - `Service`: `Get() (Settings, error)`, `Save(st Settings) error` with atomic temp-file writes to `<UserConfigDir>/wailsail/settings.json`, and `DefaultKubeconfig() string`.
-- `Settings` includes `scale` (UI zoom percent: 50/75/100/125/150, default 100, applied via `Window.SetZoom` or CSS `zoom` for `<100%`), `kubeconfigPaths` (default `[<home>/.kube/config]`, applied at startup in `main.go`), and `columnOrders` (persisted per-resource table column ordering).
+- `Settings` includes `scale` (UI zoom percent: 50/75/100/125/150, default 100, applied via `Window.SetZoom` or CSS `zoom` for `<100%`), `kubeconfigPaths` (default `[<home>/.kube/config]`, applied at startup in `main.go`), `columnOrders`, and `columnWidths` (persisted per-resource table column ordering and widths).
 
 ### Frontend conventions
 - Font: bundled Google Sans Flex (`frontend/public/fonts/`, OFL) via `--sans`.

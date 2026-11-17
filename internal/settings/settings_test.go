@@ -43,12 +43,17 @@ func TestScaleAndKubeconfigPaths(t *testing.T) {
 
 	st.Scale = 125
 	st.KubeconfigPaths = []string{"/a/config", "/b/dir"}
+	st.ColumnOrders["/pods"] = []string{"Name", "Age"}
+	st.ColumnWidths["/pods:Name"] = 320
 	if err := s.Save(st); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := s.Get()
 	if got.Scale != 125 || len(got.KubeconfigPaths) != 2 || got.KubeconfigPaths[1] != "/b/dir" {
 		t.Fatalf("round trip: %+v", got)
+	}
+	if got.ColumnWidths["/pods:Name"] != 320 || len(got.ColumnOrders["/pods"]) != 2 {
+		t.Fatalf("column prefs round trip: %+v", got)
 	}
 
 	// An explicitly emptied list stays empty; an invalid scale is reset.

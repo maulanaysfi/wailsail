@@ -38,4 +38,9 @@ export interface Settings {
      * per resource key column order
      */
     "columnOrders": { [_ in string]?: string[] | null } | null;
+
+    /**
+     * "<resourceKey>:<colLabel>" -> width in px
+     */
+    "columnWidths": { [_ in string]?: number } | null;
 }
