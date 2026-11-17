@@ -428,13 +428,13 @@
 {#snippet cellMeter(meter: ResourceMeter, maxCh: number)}
   {#if meter.showBar}
     <div class="cell-meter" style={`--text-w:${maxCh}ch`}>
+      <span class="cell-meter-text">{meter.usedText}</span>
       <div class="meter-track" title={meter.hoverText}>
         <div class={`meter-fill tone-bg-${meter.tone}`} style={`width:${meter.usedPct}%`}></div>
         {#if meter.requestMarkPct !== null}
           <span class="meter-req-mark" class:warn={meter.requestMarkWarn} style={`left:${meter.requestMarkPct}%`}></span>
         {/if}
       </div>
-      <span class="cell-meter-text">{meter.usedText}</span>
     </div>
   {:else}
     <span class="cell-meter-plain">{meter.usedText}</span>
@@ -663,7 +663,7 @@
   }
   .cell-meter {
     display: grid;
-    grid-template-columns: minmax(48px, 1fr) var(--text-w, 4ch);
+    grid-template-columns: var(--text-w, 4ch) minmax(48px, 1fr);
     align-items: center;
     gap: var(--space-1);
   }
