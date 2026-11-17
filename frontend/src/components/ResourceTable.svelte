@@ -130,6 +130,19 @@
     return buildResourceMeter("memory", u ? u.memoryBytes : null, pr?.memoryRequest, pr?.memoryLimit);
   }
 
+  const maxMeterCh = $derived.by<{ cpu: number; memory: number }>(() => {
+    version;
+    podMetrics;
+    if (!isPod) return { cpu: 3, memory: 3 };
+    let cpu = 3;
+    let memory = 3;
+    for (const r of rows.values()) {
+      cpu = Math.max(cpu, podMeterFor(r, "cpu").usedText.length);
+      memory = Math.max(memory, podMeterFor(r, "memory").usedText.length);
+    }
+    return { cpu, memory };
+  });
+
   interface DisplayCol {
     key: string;
     id: string;
@@ -412,9 +425,9 @@
   }
 </script>
 
-{#snippet cellMeter(meter: ResourceMeter)}
+{#snippet cellMeter(meter: ResourceMeter, maxCh: number)}
   {#if meter.showBar}
-    <div class="cell-meter">
+    <div class="cell-meter" style={`--text-w:${maxCh}ch`}>
       <div class="meter-track" title={meter.hoverText}>
         <div class={`meter-fill tone-bg-${meter.tone}`} style={`width:${meter.usedPct}%`}></div>
         {#if meter.requestMarkPct !== null}
@@ -480,7 +493,7 @@
           <tr class:selected={isSelected(r)} onclick={() => select(r)}>
             {#each displayCols as c (c.key)}
               {#if c.meter}
-                <td>{@render cellMeter(podMeterFor(r, c.meter))}</td>
+                <td>{@render cellMeter(podMeterFor(r, c.meter), maxMeterCh[c.meter])}</td>
               {:else}
                 {@const v = c.get(r)}
                 <td class={c.status ? `tone-${toneFor(v)}` : ""} class:name-col={c.key === "c0" || c.key === "name"}>{v}</td>
@@ -650,9 +663,9 @@
   }
   .cell-meter {
     display: grid;
-    grid-template-columns: minmax(48px, 1fr) 56px;
+    grid-template-columns: minmax(48px, 1fr) var(--text-w, 4ch);
     align-items: center;
-    gap: var(--space-2);
+    gap: var(--space-1);
   }
   .cell-meter-text,
   .cell-meter-plain {
@@ -662,7 +675,7 @@
     color: var(--text);
   }
   .cell-meter-text {
-    text-align: right;
+    text-align: left;
     overflow: hidden;
     text-overflow: clip;
   }

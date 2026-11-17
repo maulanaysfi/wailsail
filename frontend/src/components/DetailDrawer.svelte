@@ -907,7 +907,7 @@
     display: grid;
     grid-template-columns: auto minmax(48px, 1fr) auto;
     align-items: center;
-    gap: var(--space-2);
+    gap: var(--space-1);
     font-size: 12px;
     min-width: 0;
   }
