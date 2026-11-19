@@ -86,10 +86,3 @@ func (r *Registry) StopAll() {
 		e.cancel()
 	}
 }
-
-// Len returns the number of active streams.
-func (r *Registry) Len() int {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return len(r.entries)
-}

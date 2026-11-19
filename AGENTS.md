@@ -42,7 +42,7 @@
 │   ├── bindings/           # Auto-generated Wails v3 TS bindings (do not hand-edit)
 │   └── src/
 │       ├── App.svelte
-│       ├── lib/            # api.ts, format.ts, resources.ts, store.svelte.ts
+│       ├── lib/            # api.ts, format.ts, resources.ts, specs.ts, store.svelte.ts
 │       └── components/     # TopBar, Sidebar, ResourceTable, DetailDrawer, BottomDock, LogViewer, TerminalView, modals
 ├── build/                  # Wails v3 config.yml, icons, desktop/installer packaging templates
 ├── bin/                    # Compiled binaries (gitignored)
@@ -78,7 +78,7 @@ flowchart LR
 - `Service`:
   - `Contexts() ([]ContextInfo, error)`
   - `Reload()`
-  - `SetKubeconfigPaths(paths []string)` / `KubeconfigFiles() []string`
+  - `SetKubeconfigPaths(paths []string)`
   - `DefaultNamespace(contextName string) (string, error)`
   - `ServerVersion(contextName string) (string, error)`
   - `Namespaces(contextName string) ([]string, error)`
@@ -87,8 +87,6 @@ flowchart LR
   - `StopWatch(streamID string)`
   - `GetDetail(contextName string, ref ResourceRef, namespace, name string) (ObjectDetail, error)` — returns structured object, YAML without `managedFields`, neated YAML (`ObjectToNeatYAML`), related Kubernetes events, and live container CPU/memory usage (`ContainerMetrics` via `metrics.k8s.io/v1beta1`)
   - `PodMetrics(contextName, namespace string) (map[string]ContainerMetrics, error)` — returns live container CPU/memory usage for pods in a namespace (or all namespaces)
-  - `ObjectEvents(contextName, kind, namespace, name string) ([]EventInfo, error)`
-  - `GetYAML(contextName string, ref ResourceRef, namespace, name string) (string, error)`
   - `Apply(contextName, manifest, defaultNamespace string) ([]ApplyResult, error)` — multi-document YAML/JSON + `List` expansion via Server-Side Apply (`fieldManager: "wailsail"`)
   - `Delete(contextName string, ref ResourceRef, namespace, name string) error`
   - `Scale(contextName string, ref ResourceRef, namespace, name string, replicas int32) error`

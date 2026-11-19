@@ -12,7 +12,7 @@
     type WatchEvent,
   } from "../lib/api";
   import { app, cssZoom, refOf } from "../lib/store.svelte";
-  import { age, buildResourceMeter, compareCells, measureTextWidth, toneFor, type ResourceMeter } from "../lib/format";
+  import { age, buildResourceMeter, clearMeasureTextCache, compareCells, measureTextWidth, toneFor, type ResourceMeter } from "../lib/format";
   import { kindKey, resourceKey } from "../lib/resources";
 
   const ROW_H = 32;
@@ -42,6 +42,7 @@
   $effect(() => {
     if (typeof document !== "undefined" && document.fonts?.ready) {
       document.fonts.ready.then(() => {
+        clearMeasureTextCache();
         fontGen++;
       });
     }

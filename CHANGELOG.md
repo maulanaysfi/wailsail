@@ -18,10 +18,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Service Cluster FQDN in DetailDrawer**: Added a copyable `Cluster FQDN` (`<name>.<namespace>`) on the last line of `Service` `Specification & status` and removed the copy button from `Ports`.
 
 ### Changed
+- **DetailDrawer Spec Mapper Extraction**: Extracted pure resource spec, selector, and container summary builders out of `DetailDrawer.svelte` into `frontend/src/lib/specs.ts`.
+- **LogViewer Windowing & Pre-Split Ingest**: Pre-parsed Kubernetes log timestamps and search text once on ingest and windowed `.out` rendering so 10,000-line buffers avoid per-batch array cloning and DOM bloat.
+- **Pod Meter Text Width Caching**: Added bounded memoization (with font-load invalidation) to `measureTextWidth` in `frontend/src/lib/format.ts`.
+- **Backend & Store Cleanup**: Removed unused Wails bindings (`GetYAML`, `ObjectEvents`, `Service.KubeconfigFiles`), unused `ShowWide` setting, unused `stream.Registry.Len`, dead branches in `internal/kube/neat.go`, and `internal/kube/aliases.go`; limited `GetDetail` workload metrics lookups to workload kinds and deduplicated `AppState.reload()` via `reloadContexts()`.
+- **Unit Test Coverage**: Added unit tests for `internal/exec`, `internal/stream` (`Stop`/`StopAll`), and frontend `format.ts`/`specs.ts` (`npm test` via `node --test`).
 - **Bottom-Right Dock Button**: Moved the **Dock** toggle button out of `TopBar` into a bottom bar anchored at the bottom-right corner.
 - **YAML Edit Escape Behavior**: Pressing `Esc` (or clicking `Cancel`) while editing YAML in `DetailDrawer` now discards edits without a confirmation prompt and exits edit mode without closing the drawer.
 
 ### Fixed
+- **Dock Tab Error Status**: Marked dock tabs as `disconnected` when `Kube.PodContainers` fails in `LogViewer` or `TerminalView` instead of leaving them stuck on `connecting`.
 - **Stream Registry Reused-ID Race**: Returned a per-stream `done` callback from `stream.Registry.Start` so an exiting stream cannot remove or cancel a newer stream registered under the same ID.
 - **Kubeconfig Reset Cache Race**: Added a generation counter in `kube.Manager` so in-flight `For` client builds cannot cache stale clients after `Reset` or `SetKubeconfigPaths`.
 - **Manifest `List` Validation**: Applied `apiVersion`, `kind`, and `metadata.name` checks to every item expanded from `kind: List` manifests in `DecodeManifest`.

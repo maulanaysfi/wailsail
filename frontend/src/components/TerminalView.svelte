@@ -63,7 +63,10 @@
           container = containers.find((c) => c.type === "main")?.name ?? containers[0]?.name ?? "";
         }
       })
-      .catch((e) => (error = errorMessage(e)));
+      .catch((e) => {
+        error = errorMessage(e);
+        onStatus?.("disconnected");
+      });
 
     return () => {
       ro.disconnect();

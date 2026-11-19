@@ -43,7 +43,6 @@ const defaultSettings: SettingsData = {
   lastNamespace: {},
   logTailLines: 500,
   logTimestamps: false,
-  showWide: true,
   pinned: [],
   columnOrders: {},
   columnWidths: {},
@@ -120,20 +119,8 @@ class AppState {
   }
 
   async reload() {
-    const prevCtx = this.context;
-    const prevResKey = this.current ? resourceKey(this.current) : "";
-    const prevSelection = this.selection;
     await Kube.Reload();
-    this.context = "";
-    this.contexts = (await Kube.Contexts().catch(() => [])) ?? [];
-    const names = this.contexts.map((c) => c.name);
-    const pick = names.includes(prevCtx) ? prevCtx : (this.contexts.find((c) => c.current)?.name ?? names[0] ?? "");
-    if (pick) {
-      await this.selectContext(pick, {
-        preserveResourceKey: prevResKey,
-        preserveSelection: pick === prevCtx ? prevSelection : null,
-      });
-    }
+    await this.reloadContexts();
   }
 
   async selectContext(

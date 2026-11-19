@@ -203,18 +203,33 @@ export function buildResourceMeter(
 }
 
 let measureCtx: CanvasRenderingContext2D | null | undefined;
+const measureCache = new Map<string, number>();
+const MAX_MEASURE_CACHE = 500;
+
+/** Clear cached canvas text measurements (e.g. once web fonts finish loading). */
+export function clearMeasureTextCache(): void {
+  measureCache.clear();
+}
 
 /** Measure rendered text width in pixels for a CSS font string. */
 export function measureTextWidth(text: string, font: string): number {
   if (!text) return 0;
+  const key = `${font}\0${text}`;
+  const cached = measureCache.get(key);
+  if (cached !== undefined) return cached;
   if (measureCtx === undefined && typeof document !== "undefined") {
     measureCtx = document.createElement("canvas").getContext("2d");
   }
+  let width: number;
   if (measureCtx) {
     measureCtx.font = font;
-    return Math.ceil(measureCtx.measureText(text).width);
+    width = Math.ceil(measureCtx.measureText(text).width);
+  } else {
+    width = text.length * 8;
   }
-  return text.length * 8;
+  if (measureCache.size >= MAX_MEASURE_CACHE) measureCache.clear();
+  measureCache.set(key, width);
+  return width;
 }
 
 export const SECRET_VALUE_MASK = "*".repeat(20);

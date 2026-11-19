@@ -72,10 +72,11 @@ go build ./...
 go vet ./...
 go test ./...
 
-# Frontend typecheck and production bundle
+# Frontend typecheck, unit tests, and production bundle
 cd frontend
 npm install
 npm run check
+npm test
 npm run build
 ```
 

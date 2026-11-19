@@ -17,10 +17,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/dynamic"
 	"sigs.k8s.io/yaml"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -73,11 +75,6 @@ func (s *Service) Reload() {
 func (s *Service) SetKubeconfigPaths(paths []string) {
 	s.streams.StopAll()
 	s.mgr.SetKubeconfigPaths(paths)
-}
-
-// KubeconfigFiles returns the resolved kubeconfig files currently loaded.
-func (s *Service) KubeconfigFiles() []string {
-	return s.mgr.KubeconfigFiles()
 }
 
 // DefaultNamespace returns the namespace configured for a context.
@@ -214,36 +211,12 @@ func (s *Service) StopWatch(streamID string) {
 	s.streams.Stop(streamID)
 }
 
-func (s *Service) resourceClient(c *Clients, ref ResourceRef, namespace string) dynamicResource {
+func (s *Service) resourceClient(c *Clients, ref ResourceRef, namespace string) dynamic.ResourceInterface {
 	gvr := schema.GroupVersionResource{Group: ref.Group, Version: ref.Version, Resource: ref.Resource}
 	if ref.Namespaced {
 		return c.Dynamic.Resource(gvr).Namespace(namespace)
 	}
 	return c.Dynamic.Resource(gvr)
-}
-
-// GetYAML returns the object as YAML without managedFields.
-func (s *Service) GetYAML(contextName string, ref ResourceRef, namespace, name string) (string, error) {
-	c, err := s.mgr.For(contextName)
-	if err != nil {
-		return "", err
-	}
-	obj, err := s.resourceClient(c, ref, namespace).Get(s.baseCtx, name, metav1.GetOptions{})
-	if err != nil {
-		return "", err
-	}
-	return ObjectToYAML(obj)
-}
-
-// ObjectToYAML renders an object as YAML, dropping noisy managedFields.
-func ObjectToYAML(obj *unstructured.Unstructured) (string, error) {
-	obj = obj.DeepCopy()
-	unstructured.RemoveNestedField(obj.Object, "metadata", "managedFields")
-	b, err := yaml.Marshal(obj.Object)
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
 }
 
 // EventInfo describes a Kubernetes Event related to a selected object.
@@ -378,7 +351,12 @@ func (s *Service) fetchObjectMetrics(c *Clients, kind, namespace, name string, o
 		}
 		return parsePodMetricsJSON(raw)
 	}
-	// For workloads (Deployment, StatefulSet, DaemonSet, ReplicaSet), aggregate matching pod metrics.
+	// For workloads, aggregate matching pod metrics.
+	switch kind {
+	case "Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Job":
+	default:
+		return nil
+	}
 	matchLabels, _, _ := unstructured.NestedStringMap(obj, "spec", "selector", "matchLabels")
 	if len(matchLabels) == 0 {
 		return nil
@@ -443,15 +421,6 @@ func parseContainerUsage(cpuStr, memStr string) ContainerMetrics {
 		m.MemoryBytes = q.Value()
 	}
 	return m
-}
-
-// ObjectEvents returns Kubernetes events involving the specified object.
-func (s *Service) ObjectEvents(contextName, kind, namespace, name string) ([]EventInfo, error) {
-	c, err := s.mgr.For(contextName)
-	if err != nil {
-		return nil, err
-	}
-	return s.listObjectEvents(c, kind, namespace, name, "")
 }
 
 func (s *Service) listObjectEvents(c *Clients, kind, namespace, name, uid string) ([]EventInfo, error) {
@@ -627,7 +596,7 @@ func DecodeManifest(manifest string) ([]*unstructured.Unstructured, error) {
 		}
 		u := &unstructured.Unstructured{Object: m}
 		if u.IsList() {
-			if err := u.EachListItem(func(o runtimeObject) error {
+			if err := u.EachListItem(func(o runtime.Object) error {
 				item, ok := o.(*unstructured.Unstructured)
 				if !ok {
 					return nil

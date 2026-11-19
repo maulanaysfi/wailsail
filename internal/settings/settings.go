@@ -17,9 +17,8 @@ type Settings struct {
 	KubeconfigPaths []string          `json:"kubeconfigPaths"` // kubeconfig files and/or directories to scan
 	LastContext     string            `json:"lastContext"`
 	LastNamespace   map[string]string `json:"lastNamespace"` // per context; "" = all namespaces
-	LogTailLines    int64             `json:"logTailLines"`
-	LogTimestamps   bool              `json:"logTimestamps"`
-	ShowWide        bool                `json:"showWide"`
+	LogTailLines    int64               `json:"logTailLines"`
+	LogTimestamps   bool                `json:"logTimestamps"`
 	Pinned          []string            `json:"pinned"`       // resource keys "group/resource"
 	ColumnOrders    map[string][]string `json:"columnOrders"` // per resource key column order
 	ColumnWidths    map[string]int      `json:"columnWidths"` // "<resourceKey>:<colLabel>" -> width in px
@@ -49,7 +48,6 @@ func Defaults() Settings {
 		KubeconfigPaths: []string{DefaultKubeconfigPath()},
 		LastNamespace:   map[string]string{},
 		LogTailLines:    500,
-		ShowWide:        true,
 		Pinned:          []string{},
 		ColumnOrders:    map[string][]string{},
 		ColumnWidths:    map[string]int{},

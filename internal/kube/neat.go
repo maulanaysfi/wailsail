@@ -122,9 +122,6 @@ func cleanTemplateMetadata(meta map[string]any) {
 	if anns := asMap(meta["annotations"]); anns != nil && len(anns) == 0 {
 		delete(meta, "annotations")
 	}
-	if len(meta) == 0 {
-		return
-	}
 }
 
 func cleanWorkloadSpec(kind string, spec map[string]any) {
@@ -194,7 +191,7 @@ func cleanPodSpec(spec map[string]any, isPod bool) {
 		for _, item := range vols {
 			vm := asMap(item)
 			name, _ := vm["name"].(string)
-			if isServiceAccountVolume(name, vm) {
+			if isServiceAccountVolume(name) {
 				strippedVols[name] = true
 				continue
 			}
@@ -255,20 +252,8 @@ func cleanContainer(c map[string]any, strippedVols map[string]bool) {
 	}
 }
 
-func isServiceAccountVolume(name string, v map[string]any) bool {
-	if strings.HasPrefix(name, "kube-api-access-") || strings.HasPrefix(name, "default-token-") {
-		return true
-	}
-	if proj := asMap(v["projected"]); proj != nil {
-		if srcs, ok := proj["sources"].([]any); ok {
-			for _, s := range srcs {
-				if sm := asMap(s); sm != nil && sm["serviceAccountToken"] != nil {
-					return strings.HasPrefix(name, "kube-api-access-")
-				}
-			}
-		}
-	}
-	return false
+func isServiceAccountVolume(name string) bool {
+	return strings.HasPrefix(name, "kube-api-access-") || strings.HasPrefix(name, "default-token-")
 }
 
 func isDefaultNodeToleration(t map[string]any) bool {

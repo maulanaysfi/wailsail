@@ -18,6 +18,16 @@
   } = $props();
 
   const MAX_LINES = 10_000;
+  const LINE_H = 16;
+  const OVERSCAN = 60;
+  const K8S_TS_RE = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))(\s+)(.*)$/;
+
+  interface LogEntry {
+    id: number;
+    lower: string;
+    ts: string;
+    body: string;
+  }
 
   let containers = $state<ContainerInfo[]>([]);
   let container = $state(untrack(() => initialContainer));
@@ -27,12 +37,24 @@
   let follow = $state(true);
   let paused = $state(false);
   let search = $state("");
-  let lines = $state<string[]>([]);
+  let entries: LogEntry[] = [];
+  let version = $state(0);
   let ended = $state(false);
   let error = $state("");
   let restartNonce = $state(0);
   let scroller: HTMLDivElement | undefined = $state();
-  let stickBottom = true;
+  let scrollTop = $state(0);
+  let viewportH = $state(320);
+  let stickBottom = $state(true);
+  let lineSeq = 0;
+
+  function makeEntry(line: string, withTs: boolean): LogEntry {
+    if (withTs) {
+      const m = K8S_TS_RE.exec(line);
+      if (m) return { id: ++lineSeq, lower: line.toLowerCase(), ts: m[1] + m[2], body: m[3] };
+    }
+    return { id: ++lineSeq, lower: line.toLowerCase(), ts: "", body: line };
+  }
 
   // Load containers of the pod once.
   $effect(() => {
@@ -46,7 +68,10 @@
           container = containers.find((c) => c.type === "main")?.name ?? containers[0]?.name ?? "";
         }
       })
-      .catch((e) => (error = errorMessage(e)));
+      .catch((e) => {
+        error = errorMessage(e);
+        onStatus?.("disconnected");
+      });
   });
 
   // Start / restart the log stream whenever options change.
@@ -62,7 +87,10 @@
     restartNonce;
     if (!c) return;
     untrack(() => {
-      lines = [];
+      entries = [];
+      version++;
+      scrollTop = 0;
+      stickBottom = true;
       ended = false;
       error = "";
       onStatus?.("connecting");
@@ -72,11 +100,15 @@
       if (ev.connected) onStatus?.("connected");
       if (!paused && ev.lines?.length) {
         onStatus?.("connected");
-        const combined = [...lines, ...ev.lines];
-        lines = combined.length > MAX_LINES ? combined.slice(combined.length - MAX_LINES) : combined;
+        for (const line of ev.lines) entries.push(makeEntry(line, ts));
+        if (entries.length > MAX_LINES) {
+          entries.splice(0, entries.length - MAX_LINES);
+        }
+        version++;
         if (stickBottom && scroller) {
           await tick();
           scroller.scrollTop = scroller.scrollHeight;
+          scrollTop = scroller.scrollTop;
         }
       }
       if (ev.error) {
@@ -101,21 +133,37 @@
     };
   });
 
-  const visible = $derived.by(() => {
+  const matched = $derived.by(() => {
+    version;
     const q = search.trim().toLowerCase();
-    return q ? lines.filter((l) => l.toLowerCase().includes(q)) : lines;
+    return q ? entries.filter((e) => e.lower.includes(q)) : entries;
   });
 
-  const K8S_TS_RE = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))(\s+)(.*)$/;
+  // shortcut: fixed 16px row height estimate for spacers; wrapped lines render cleanly inside the 60-line overscan window.
+  const win = $derived.by(() => {
+    const total = matched.length;
+    const page = Math.max(1, Math.ceil(viewportH / LINE_H));
+    if (stickBottom) {
+      const last = total;
+      const first = Math.max(0, last - page - OVERSCAN * 2);
+      return { first, last };
+    }
+    const first = Math.max(0, Math.floor(scrollTop / LINE_H) - OVERSCAN);
+    const last = Math.min(total, Math.ceil((scrollTop + viewportH) / LINE_H) + OVERSCAN);
+    return { first, last };
+  });
+  const visible = $derived(matched.slice(win.first, win.last));
 
-  function splitLogLine(line: string): [string, string] {
-    if (!timestamps) return ["", line];
-    const m = K8S_TS_RE.exec(line);
-    return m ? [m[1] + m[2], m[3]] : ["", line];
+  function clearLogs() {
+    entries = [];
+    version++;
+    scrollTop = 0;
+    stickBottom = true;
   }
 
   function onScroll() {
     if (!scroller) return;
+    scrollTop = scroller.scrollTop;
     stickBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 24;
   }
 </script>
@@ -161,7 +209,7 @@
     <button onclick={() => (paused = !paused)} title={paused ? "Resume live log stream" : "Pause live log stream"}>
       {paused ? "Resume" : "Pause"}
     </button>
-    <button onclick={() => (lines = [])} title="Clear displayed log lines">Clear</button>
+    <button onclick={clearLogs} title="Clear displayed log lines">Clear</button>
     <button onclick={() => restartNonce++} title="Reconnect container log stream">Reconnect</button>
     <input class="search" placeholder="Filter lines…" bind:value={search} />
     {#if ended}<span class="pill">EOF</span>{/if}
@@ -169,11 +217,12 @@
 
   {#if error}<div class="banner error">{error}</div>{/if}
 
-  <div class="out" bind:this={scroller} onscroll={onScroll}>
-    {#each visible as line, i (i)}
-      {@const [ts, body] = splitLogLine(line)}
-      <div class="line">{#if ts}<span class="ts">{ts}</span>{/if}{body}</div>
+  <div class="out" bind:this={scroller} bind:clientHeight={viewportH} onscroll={onScroll}>
+    {#if win.first > 0}<div aria-hidden="true" style={`height:${win.first * LINE_H}px`}></div>{/if}
+    {#each visible as entry (entry.id)}
+      <div class="line">{#if entry.ts}<span class="ts">{entry.ts}</span>{/if}{entry.body}</div>
     {/each}
+    {#if win.last < matched.length}<div aria-hidden="true" style={`height:${(matched.length - win.last) * LINE_H}px`}></div>{/if}
   </div>
 </div>
 

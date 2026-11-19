@@ -61,32 +61,11 @@ export function GetDetail(contextName: string, ref: $models.ResourceRef, $namesp
 }
 
 /**
- * GetYAML returns the object as YAML without managedFields.
- */
-export function GetYAML(contextName: string, ref: $models.ResourceRef, $namespace: string, name: string): $CancellablePromise<string> {
-    return $Call.ByID(3196794545, contextName, ref, $namespace, name);
-}
-
-/**
- * KubeconfigFiles returns the resolved kubeconfig files currently loaded.
- */
-export function KubeconfigFiles(): $CancellablePromise<string[] | null> {
-    return $Call.ByID(2478097620);
-}
-
-/**
  * Namespaces lists namespace names. When listing is forbidden it falls back
  * to the context's default namespace.
  */
 export function Namespaces(contextName: string): $CancellablePromise<string[] | null> {
     return $Call.ByID(2631297746, contextName);
-}
-
-/**
- * ObjectEvents returns Kubernetes events involving the specified object.
- */
-export function ObjectEvents(contextName: string, kind: string, $namespace: string, name: string): $CancellablePromise<$models.EventInfo[] | null> {
-    return $Call.ByID(691594004, contextName, kind, $namespace, name);
 }
 
 /**

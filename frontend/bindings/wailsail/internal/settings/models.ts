@@ -27,7 +27,6 @@ export interface Settings {
     "lastNamespace": { [_ in string]?: string } | null;
     "logTailLines": number;
     "logTimestamps": boolean;
-    "showWide": boolean;
 
     /**
      * resource keys "group/resource"
