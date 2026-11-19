@@ -84,6 +84,8 @@ class AppState {
   #unansweredSince = 0;
   #probing = false;
   #ticks = 0;
+  #saveChain = Promise.resolve();
+  #savePending = false;
 
   async init() {
     setInterval(() => {
@@ -273,9 +275,18 @@ class AppState {
 
   saveSettings(patch: Partial<SettingsData>) {
     this.settings = { ...this.settings, ...patch };
-    Settings.Save(this.settings).catch((e) => this.toast(`Could not save settings: ${errorMessage(e)}`, "error"));
     if ("theme" in patch) this.applyTheme();
     if ("scale" in patch) this.applyScale();
+    if (this.#savePending) return;
+    this.#savePending = true;
+    this.#saveChain = this.#saveChain.then(async () => {
+      this.#savePending = false;
+      try {
+        await Settings.Save({ ...this.settings });
+      } catch (e) {
+        this.toast(`Could not save settings: ${errorMessage(e)}`, "error");
+      }
+    });
   }
 
   applyScale() {

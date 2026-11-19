@@ -41,6 +41,7 @@ type Manager struct {
 	rules       *clientcmd.ClientConfigLoadingRules
 	customPaths []string // user-configured files/directories; nil = standard rules
 	custom      bool
+	gen         uint64
 	clients     map[string]*Clients
 }
 
@@ -65,6 +66,7 @@ func (m *Manager) SetKubeconfigPaths(paths []string) {
 	m.customPaths = append([]string(nil), paths...)
 	m.custom = len(paths) > 0
 	m.rebuildRulesLocked()
+	m.gen++
 	m.clients = map[string]*Clients{}
 }
 
@@ -201,6 +203,7 @@ func (m *Manager) Reset() {
 	if m.custom {
 		m.rebuildRulesLocked()
 	}
+	m.gen++
 	m.clients = map[string]*Clients{}
 	m.mu.Unlock()
 }
@@ -213,6 +216,7 @@ func (m *Manager) For(contextName string) (*Clients, error) {
 		return c, nil
 	}
 	rules := m.rules
+	gen := m.gen
 	m.mu.Unlock()
 
 	if contextName == "" {
@@ -262,7 +266,13 @@ func (m *Manager) For(contextName string) (*Clients, error) {
 		DefaultNS: ns,
 	}
 	m.mu.Lock()
-	m.clients[contextName] = c
+	if m.gen == gen {
+		if existing, ok := m.clients[contextName]; ok {
+			m.mu.Unlock()
+			return existing, nil
+		}
+		m.clients[contextName] = c
+	}
 	m.mu.Unlock()
 	return c, nil
 }

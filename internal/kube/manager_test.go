@@ -104,4 +104,17 @@ func TestManagerSetKubeconfigPaths(t *testing.T) {
 	if files := m.KubeconfigFiles(); len(files) != 4 {
 		t.Fatalf("files %v", files)
 	}
+
+	// Reset and SetKubeconfigPaths advance generation so in-flight builds
+	// cannot populate the cache with clients from older rules.
+	g0 := m.gen
+	m.Reset()
+	if m.gen <= g0 {
+		t.Fatalf("Reset did not increment gen: %d -> %d", g0, m.gen)
+	}
+	g1 := m.gen
+	m.SetKubeconfigPaths(nil)
+	if m.gen <= g1 {
+		t.Fatalf("SetKubeconfigPaths did not increment gen: %d -> %d", g1, m.gen)
+	}
 }

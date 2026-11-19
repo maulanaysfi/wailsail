@@ -200,10 +200,10 @@ func (s *Service) Watch(contextName string, ref ResourceRef, namespace string, s
 	if err != nil {
 		return "", err
 	}
-	ctx, id := s.streams.Start(s.baseCtx, streamID)
+	ctx, id, done := s.streams.Start(s.baseCtx, streamID)
 	topic := WatchTopic(id)
 	go func() {
-		defer s.streams.Done(id)
+		defer done()
 		c.runWatch(ctx, ref, namespace, func(ev WatchEvent) { s.emit(topic, ev) })
 	}()
 	return id, nil
@@ -629,23 +629,34 @@ func DecodeManifest(manifest string) ([]*unstructured.Unstructured, error) {
 		if u.IsList() {
 			if err := u.EachListItem(func(o runtimeObject) error {
 				item, ok := o.(*unstructured.Unstructured)
-				if ok {
-					out = append(out, item)
+				if !ok {
+					return nil
 				}
+				if err := validateObject(item); err != nil {
+					return err
+				}
+				out = append(out, item)
 				return nil
 			}); err != nil {
 				return nil, err
 			}
 			continue
 		}
-		if u.GetKind() == "" || u.GetAPIVersion() == "" {
-			return nil, errors.New("every document needs apiVersion and kind")
-		}
-		if u.GetName() == "" {
-			return nil, fmt.Errorf("%s: metadata.name is required", u.GetKind())
+		if err := validateObject(u); err != nil {
+			return nil, err
 		}
 		out = append(out, u)
 	}
+}
+
+func validateObject(u *unstructured.Unstructured) error {
+	if u.GetKind() == "" || u.GetAPIVersion() == "" {
+		return errors.New("every document needs apiVersion and kind")
+	}
+	if u.GetName() == "" {
+		return fmt.Errorf("%s: metadata.name is required", u.GetKind())
+	}
+	return nil
 }
 
 // Delete deletes an object with background propagation.

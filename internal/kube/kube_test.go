@@ -132,6 +132,16 @@ items:
 	if _, err := DecodeManifest("kind: ConfigMap\nmetadata: {name: x}\n"); err == nil {
 		t.Fatal("expected missing apiVersion error")
 	}
+	badList := `apiVersion: v1
+kind: List
+items:
+- apiVersion: v1
+  kind: ConfigMap
+  metadata: {}
+`
+	if _, err := DecodeManifest(badList); err == nil {
+		t.Fatal("expected missing metadata.name error inside List")
+	}
 }
 
 func TestFilterAndSortEvents(t *testing.T) {

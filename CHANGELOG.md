@@ -22,6 +22,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **YAML Edit Escape Behavior**: Pressing `Esc` (or clicking `Cancel`) while editing YAML in `DetailDrawer` now discards edits without a confirmation prompt and exits edit mode without closing the drawer.
 
 ### Fixed
+- **Stream Registry Reused-ID Race**: Returned a per-stream `done` callback from `stream.Registry.Start` so an exiting stream cannot remove or cancel a newer stream registered under the same ID.
+- **Kubeconfig Reset Cache Race**: Added a generation counter in `kube.Manager` so in-flight `For` client builds cannot cache stale clients after `Reset` or `SetKubeconfigPaths`.
+- **Manifest `List` Validation**: Applied `apiVersion`, `kind`, and `metadata.name` checks to every item expanded from `kind: List` manifests in `DecodeManifest`.
+- **Settings Save Ordering**: Serialized and coalesced `Settings.Save` calls in `AppState` so rapid UI preference changes cannot overwrite newer state out of order.
 - **Table Watch `resourceVersion` Handling**: Preserved the outer `Table` list `resourceVersion` in `parseTable` (falling back to row `resourceVersion` only on watch events where outer RV is empty) to avoid immediate `410 Gone` relists.
 - **Port Forward Dual-Protocol Crash**: Keyed `PortForwardModal` port options by port/protocol/name/index (preventing Svelte duplicate-key crashes on Services like `kube-dns` exposing `53/TCP` and `53/UDP`) and guarded port lookups against stale async updates.
 - **DetailDrawer Stale Load & Scale Reset**: Added request sequencing in `DetailDrawer.load()` so slow responses from a previously selected resource cannot overwrite the current selection, and reset inline `replicas` scale input when switching resources.

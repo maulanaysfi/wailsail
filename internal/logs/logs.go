@@ -82,10 +82,10 @@ func (s *Service) Start(contextName, namespace, pod string, opts Options, stream
 		t := opts.TailLines
 		plo.TailLines = &t
 	}
-	ctx, id := s.streams.Start(s.baseCtx, streamID)
+	ctx, id, done := s.streams.Start(s.baseCtx, streamID)
 	topic := Topic(id)
 	go func() {
-		defer s.streams.Done(id)
+		defer done()
 		rc, err := c.Typed.CoreV1().Pods(namespace).GetLogs(pod, plo).Stream(ctx)
 		if err != nil {
 			s.emit(topic, Event{Ended: true, Error: err.Error()})
