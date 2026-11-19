@@ -60,11 +60,13 @@ export interface WatchEvent {
   error?: string;
 }
 export interface LogEvent {
+  connected?: boolean;
   lines?: string[];
   ended?: boolean;
   error?: string;
 }
 export interface ExecEvent {
+  connected?: boolean;
   data?: string;
   exited?: boolean;
   error?: string;

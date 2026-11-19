@@ -26,9 +26,10 @@ var DefaultShell = []string{"/bin/sh", "-c", "command -v bash >/dev/null 2>&1 &&
 // Event is the payload pushed on Topic(id). Data is base64 encoded so that
 // arbitrary byte sequences (split UTF-8, escape codes) survive JSON.
 type Event struct {
-	Data   string `json:"data,omitempty"`
-	Exited bool   `json:"exited,omitempty"`
-	Error  string `json:"error,omitempty"`
+	Connected bool   `json:"connected,omitempty"`
+	Data      string `json:"data,omitempty"`
+	Exited    bool   `json:"exited,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 // Topic is the event name for an exec session.
@@ -49,24 +50,35 @@ func (s *session) close() {
 	})
 }
 
-// sizeQueue adapts a channel to remotecommand.TerminalSizeQueue.
-type sizeQueue chan remotecommand.TerminalSize
+// sizeQueue adapts a channel to remotecommand.TerminalSizeQueue and notifies
+// once the remote stream begins pulling terminal sizes.
+type sizeQueue struct {
+	ch        chan remotecommand.TerminalSize
+	onConnect func()
+}
 
 func (q sizeQueue) Next() *remotecommand.TerminalSize {
-	s, ok := <-q
+	s, ok := <-q.ch
 	if !ok {
 		return nil
+	}
+	if q.onConnect != nil {
+		q.onConnect()
 	}
 	return &s
 }
 
 // emitWriter forwards output chunks as events.
 type emitWriter struct {
-	topic string
-	emit  stream.Emitter
+	topic     string
+	emit      stream.Emitter
+	onConnect func()
 }
 
 func (w emitWriter) Write(p []byte) (int, error) {
+	if w.onConnect != nil {
+		w.onConnect()
+	}
 	w.emit(w.topic, Event{Data: base64.StdEncoding.EncodeToString(p)})
 	return len(p), nil
 }
@@ -154,13 +166,17 @@ func (s *Service) Start(contextName, namespace, pod, container string, command [
 	s.mu.Unlock()
 
 	topic := Topic(sessionID)
-	out := emitWriter{topic: topic, emit: s.emit}
+	var connOnce sync.Once
+	markConnected := func() {
+		connOnce.Do(func() { s.emit(topic, Event{Connected: true}) })
+	}
+	out := emitWriter{topic: topic, emit: s.emit, onConnect: markConnected}
 	go func() {
 		err := executor.StreamWithContext(ctx, remotecommand.StreamOptions{
 			Stdin:             pr,
 			Stdout:            out,
 			Tty:               true,
-			TerminalSizeQueue: sizeQueue(ss.sizes),
+			TerminalSizeQueue: sizeQueue{ch: ss.sizes, onConnect: markConnected},
 		})
 		ev := Event{Exited: true}
 		if err != nil && !errors.Is(err, context.Canceled) {

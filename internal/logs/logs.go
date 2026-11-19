@@ -27,9 +27,10 @@ type Options struct {
 
 // Event is the payload pushed on Topic(id).
 type Event struct {
-	Lines []string `json:"lines,omitempty"`
-	Ended bool     `json:"ended,omitempty"`
-	Error string   `json:"error,omitempty"`
+	Connected bool     `json:"connected,omitempty"`
+	Lines     []string `json:"lines,omitempty"`
+	Ended     bool     `json:"ended,omitempty"`
+	Error     string   `json:"error,omitempty"`
 }
 
 // Topic is the event name for a log stream.
@@ -90,6 +91,7 @@ func (s *Service) Start(contextName, namespace, pod string, opts Options, stream
 			return
 		}
 		defer rc.Close()
+		s.emit(topic, Event{Connected: true})
 		err = Pump(ctx, rc, 100*time.Millisecond, func(lines []string) { s.emit(topic, Event{Lines: lines}) })
 		ev := Event{Ended: true}
 		if err != nil && ctx.Err() == nil {
