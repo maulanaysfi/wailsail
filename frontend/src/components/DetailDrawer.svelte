@@ -680,7 +680,7 @@
                     {@const long = v.length > 100}
                     {@const open = !!expandedMeta[ek]}
                     <div class="ann-row">
-                      <span class="mono ann-k">{k}</span>
+                      <span class="mono ann-k val-text">{k}</span>
                       <span
                         class="mono ann-v val-text"
                         class:expandable={long}
@@ -722,7 +722,7 @@
                 <dt>Selector</dt>
                 <dd class="chips">
                   {#each selectorEntries as [k, v] (k)}
-                    <span class="chip mono"><span class="chip-k">{k}=</span><span class="val-text">{v}</span></span>
+                    <span class="chip mono val-text"><span class="chip-k">{k}=</span>{v}</span>
                   {/each}
                 </dd>
               {/if}
@@ -1055,8 +1055,6 @@
   }
   .chip-k {
     color: var(--muted);
-    user-select: none;
-    -webkit-user-select: none;
   }
   .expandable {
     cursor: pointer;
