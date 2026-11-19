@@ -6,7 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.3-beta] - 2026-11-19
+
 ### Added
+- **GitHub Actions CI & Auto-Release (`.github/workflows/ci.yml`)**: Added automated validation/testing on PRs and pushes to `master`, plus 4-target release builds (`linux/amd64`, `windows/amd64`, `darwin/arm64`, `darwin/amd64`) with combined `SHA256SUMS` when `build/config.yml` `info.version` is bumped.
 - **Dock Tab Icons, Status Colors & Close All**:
   - Replaced text badges in `BottomDock` tabs with Logs and Shell SVG icons colored by live session status (`green` = connected, `yellow` = connecting/reconnecting, `red` = disconnected via `connected` events on `logs.Event` and `exec.Event`).
   - Made the dock tab strip horizontally scrollable when many tabs are open (with hidden scrollbar and overflow mouse-wheel scrolling) and added a **Close all** button (with confirmation prompt) next to the hide dock button.
