@@ -265,16 +265,17 @@ type ContainerMetrics struct {
 }
 
 // ObjectDetail bundles the structured object, its YAML representation,
-// related Kubernetes events, and live container metrics for the detail drawer.
+// neated YAML, related Kubernetes events, and live container metrics.
 type ObjectDetail struct {
-	Object  map[string]any              `json:"object"`
-	YAML    string                      `json:"yaml"`
-	Events  []EventInfo                 `json:"events"`
-	Metrics map[string]ContainerMetrics `json:"metrics"`
+	Object   map[string]any              `json:"object"`
+	YAML     string                      `json:"yaml"`
+	NeatYAML string                      `json:"neatYaml"`
+	Events   []EventInfo                 `json:"events"`
+	Metrics  map[string]ContainerMetrics `json:"metrics"`
 }
 
 // GetDetail fetches a resource's structured representation, YAML (without
-// managedFields), related cluster events, and container resource usage.
+// managedFields), neated YAML, related cluster events, and container usage.
 func (s *Service) GetDetail(contextName string, ref ResourceRef, namespace, name string) (ObjectDetail, error) {
 	c, err := s.mgr.For(contextName)
 	if err != nil {
@@ -290,13 +291,18 @@ func (s *Service) GetDetail(contextName string, ref ResourceRef, namespace, name
 	if err != nil {
 		return ObjectDetail{}, err
 	}
+	neatYAML, err := ObjectToNeatYAML(obj)
+	if err != nil {
+		neatYAML = string(b)
+	}
 	evs, _ := s.listObjectEvents(c, ref.Kind, namespace, name, string(obj.GetUID()))
 	metrics := s.fetchObjectMetrics(c, ref.Kind, namespace, name, clean.Object)
 	return ObjectDetail{
-		Object:  clean.Object,
-		YAML:    string(b),
-		Events:  evs,
-		Metrics: metrics,
+		Object:   clean.Object,
+		YAML:     string(b),
+		NeatYAML: neatYAML,
+		Events:   evs,
+		Metrics:  metrics,
 	}, nil
 }
 

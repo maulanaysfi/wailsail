@@ -107,11 +107,12 @@ export interface EventInfo {
 
 /**
  * ObjectDetail bundles the structured object, its YAML representation,
- * related Kubernetes events, and live container metrics for the detail drawer.
+ * neated YAML, related Kubernetes events, and live container metrics.
  */
 export interface ObjectDetail {
     "object": { [_ in string]?: any } | null;
     "yaml": string;
+    "neatYaml": string;
     "events": EventInfo[] | null;
     "metrics": { [_ in string]?: ContainerMetrics } | null;
 }

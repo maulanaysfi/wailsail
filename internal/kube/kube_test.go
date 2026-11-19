@@ -1,11 +1,13 @@
 package kube
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 )
 
@@ -213,5 +215,64 @@ func TestParseTableOwnerAndPodResources(t *testing.T) {
 	}
 	if r.PodResources == nil || r.PodResources.Container != "app" || r.PodResources.CPURequest != "250m" || r.PodResources.MemoryLimit != "256Mi" {
 		t.Fatalf("expected main container podResources, got %+v", r.PodResources)
+	}
+}
+
+func TestNeatObject(t *testing.T) {
+	u := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "v1",
+		"kind":       "Pod",
+		"metadata": map[string]any{
+			"name":              "web-1",
+			"namespace":         "prod",
+			"uid":               "abc",
+			"resourceVersion":   "99",
+			"creationTimestamp": "2026-01-01T00:00:00Z",
+			"annotations": map[string]any{
+				"kubectl.kubernetes.io/last-applied-configuration": "{}",
+				"custom/keep": "yes",
+			},
+		},
+		"spec": map[string]any{
+			"nodeName":                      "node-1",
+			"dnsPolicy":                     "ClusterFirst",
+			"restartPolicy":                 "Always",
+			"schedulerName":                 "default-scheduler",
+			"serviceAccountName":            "default",
+			"terminationGracePeriodSeconds": int64(30),
+			"volumes": []any{
+				map[string]any{"name": "kube-api-access-xyz"},
+				map[string]any{"name": "data", "emptyDir": map[string]any{}},
+			},
+			"containers": []any{
+				map[string]any{
+					"name":                     "app",
+					"image":                    "nginx:1.25",
+					"imagePullPolicy":          "IfNotPresent",
+					"terminationMessagePath":   "/dev/termination-log",
+					"terminationMessagePolicy": "File",
+					"resources":                map[string]any{},
+					"volumeMounts": []any{
+						map[string]any{"name": "kube-api-access-xyz", "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount"},
+						map[string]any{"name": "data", "mountPath": "/data"},
+					},
+				},
+			},
+		},
+		"status": map[string]any{"phase": "Running"},
+	}}
+	out, err := ObjectToNeatYAML(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, drop := range []string{"status:", "uid:", "resourceVersion:", "nodeName:", "ClusterFirst", "kube-api-access-xyz", "last-applied-configuration"} {
+		if strings.Contains(out, drop) {
+			t.Fatalf("expected %q stripped from neat YAML:\n%s", drop, out)
+		}
+	}
+	for _, keep := range []string{"name: web-1", "custom/keep: \"yes\"", "image: nginx:1.25", "mountPath: /data"} {
+		if !strings.Contains(out, keep) {
+			t.Fatalf("expected %q preserved in neat YAML:\n%s", keep, out)
+		}
 	}
 }
