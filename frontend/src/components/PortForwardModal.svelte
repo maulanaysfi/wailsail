@@ -20,6 +20,7 @@
   $effect(() => {
     const t = target;
     if (!t) return;
+    let cancelled = false;
     ports = [];
     error = "";
     const p =
@@ -27,9 +28,15 @@
         ? PortForward.ServicePorts(app.context, t.namespace, t.name)
         : Kube.PodContainers(app.context, t.namespace, t.name).then((cs) => (cs ?? []).flatMap((c) => c.ports ?? []));
     p.then((list) => {
+      if (cancelled) return;
       ports = list ?? [];
       if (ports.length) remotePort = ports[0].port;
-    }).catch((e) => (error = errorMessage(e)));
+    }).catch((e) => {
+      if (!cancelled) error = errorMessage(e);
+    });
+    return () => {
+      cancelled = true;
+    };
   });
 
   async function start() {
@@ -74,8 +81,10 @@
           Remote port
           {#if ports.length}
             <select bind:value={remotePort}>
-              {#each ports as p (p.port)}
-                <option value={p.port}>{p.port}{p.name ? ` (${p.name})` : ""}</option>
+              {#each ports as p, i (`${p.port}/${p.protocol}/${p.name}/${i}`)}
+                <option value={p.port}>
+                  {p.port}{p.protocol && p.protocol !== "TCP" ? `/${p.protocol}` : ""}{p.name ? ` (${p.name})` : ""}
+                </option>
               {/each}
             </select>
           {/if}

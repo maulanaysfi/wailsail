@@ -4,6 +4,7 @@ package logs
 import (
 	"bufio"
 	"context"
+	"errors"
 	"io"
 	"sync"
 	"time"
@@ -139,15 +140,54 @@ func Pump(ctx context.Context, r io.Reader, interval time.Duration, deliver func
 		}
 	}()
 
-	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 64*1024), maxLine)
-	for sc.Scan() {
+	br := bufio.NewReaderSize(r, 64*1024)
+	var buf []byte
+	emitLine := func(b []byte) {
+		if len(b) > 0 && b[len(b)-1] == '\r' {
+			b = b[:len(b)-1]
+		}
 		mu.Lock()
-		pending = append(pending, sc.Text())
+		pending = append(pending, string(b))
 		mu.Unlock()
+	}
+	var readErr error
+	for {
+		frag, err := br.ReadSlice('\n')
+		eol := err == nil
+		if eol && len(frag) > 0 && frag[len(frag)-1] == '\n' {
+			frag = frag[:len(frag)-1]
+		}
+		for len(frag) > 0 {
+			room := maxLine - len(buf)
+			if len(frag) <= room {
+				buf = append(buf, frag...)
+				frag = nil
+			} else {
+				buf = append(buf, frag[:room]...)
+				frag = frag[room:]
+				emitLine(buf)
+				buf = buf[:0]
+			}
+		}
+		if eol {
+			emitLine(buf)
+			buf = buf[:0]
+			continue
+		}
+		if errors.Is(err, bufio.ErrBufferFull) {
+			continue
+		}
+		if errors.Is(err, io.EOF) {
+			if len(buf) > 0 {
+				emitLine(buf)
+			}
+			break
+		}
+		readErr = err
+		break
 	}
 	close(stop)
 	<-tickerDone
 	flush()
-	return sc.Err()
+	return readErr
 }

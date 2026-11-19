@@ -40,11 +40,19 @@
   const activeYaml = $derived(neat ? neatYaml : yaml);
   const dirty = $derived(editing && draft !== activeYaml);
 
+  let loadSeq = 0;
+
   async function load() {
+    const seq = ++loadSeq;
+    const ctx = app.context;
+    const ref = refOf(sel.type);
+    const ns = sel.namespace;
+    const name = sel.name;
     loading = true;
     error = "";
     try {
-      const detail = await Kube.GetDetail(app.context, refOf(sel.type), sel.namespace, sel.name);
+      const detail = await Kube.GetDetail(ctx, ref, ns, name);
+      if (seq !== loadSeq) return;
       obj = (detail.object as Record<string, any>) ?? null;
       events = detail.events ?? [];
       metrics = (detail.metrics as Record<string, ContainerMetrics>) ?? {};
@@ -52,9 +60,10 @@
       neatYaml = detail.neatYaml ?? yaml;
       if (!editing) draft = neat ? neatYaml : yaml;
     } catch (e) {
+      if (seq !== loadSeq) return;
       error = errorMessage(e);
     } finally {
-      loading = false;
+      if (seq === loadSeq) loading = false;
     }
   }
 
@@ -64,6 +73,13 @@
     sel.namespace;
     sel.type;
     editing = false;
+    replicas = null;
+    obj = null;
+    events = [];
+    metrics = {};
+    yaml = "";
+    neatYaml = "";
+    draft = "";
     expandedMeta = {};
     revealedKeys = {};
     revealedVals = {};

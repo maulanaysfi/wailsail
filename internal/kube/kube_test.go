@@ -43,11 +43,12 @@ func TestParseTable(t *testing.T) {
 			t.Fatalf("cell %d = %q, want %q", i, r.Cells[i], w)
 		}
 	}
-	if res.ResourceVersion != "41" {
-		t.Fatalf("rv = %s", res.ResourceVersion)
+	if res.ResourceVersion != "42" {
+		t.Fatalf("rv = %s, want 42", res.ResourceVersion)
 	}
 
-	// A watch event without column definitions reuses the previous layout.
+	// A watch event without column definitions reuses the previous layout
+	// and falls back to the row's resourceVersion when the outer table omits it.
 	ev := `{"kind":"Table","columnDefinitions":[],"rows":[{"cells":["web-2","0/1",0,"1s","10.0.0.5"],
 	 "object":{"metadata":{"name":"web-2","namespace":"prod","uid":"u-2","resourceVersion":"50"}}}]}`
 	res2, err := parseTable([]byte(ev), res)
@@ -56,6 +57,9 @@ func TestParseTable(t *testing.T) {
 	}
 	if got := res2.Rows[0].Cells; len(got) != 4 || got[3] != "10.0.0.5" {
 		t.Fatalf("cells %v", got)
+	}
+	if res2.ResourceVersion != "50" {
+		t.Fatalf("watch rv = %s, want 50", res2.ResourceVersion)
 	}
 }
 

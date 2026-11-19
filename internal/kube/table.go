@@ -219,7 +219,7 @@ func parseTable(raw []byte, prev *tableResult) (*tableResult, error) {
 				MemoryLimit:   c0.Resources.Limits["memory"],
 			}
 		}
-		if om.Metadata.ResourceVersion != "" {
+		if res.ResourceVersion == "" && om.Metadata.ResourceVersion != "" {
 			res.ResourceVersion = om.Metadata.ResourceVersion
 		}
 		row.Cells = make([]string, len(res.colIndex))

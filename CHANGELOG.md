@@ -22,6 +22,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **YAML Edit Escape Behavior**: Pressing `Esc` (or clicking `Cancel`) while editing YAML in `DetailDrawer` now discards edits without a confirmation prompt and exits edit mode without closing the drawer.
 
 ### Fixed
+- **Table Watch `resourceVersion` Handling**: Preserved the outer `Table` list `resourceVersion` in `parseTable` (falling back to row `resourceVersion` only on watch events where outer RV is empty) to avoid immediate `410 Gone` relists.
+- **Port Forward Dual-Protocol Crash**: Keyed `PortForwardModal` port options by port/protocol/name/index (preventing Svelte duplicate-key crashes on Services like `kube-dns` exposing `53/TCP` and `53/UDP`) and guarded port lookups against stale async updates.
+- **DetailDrawer Stale Load & Scale Reset**: Added request sequencing in `DetailDrawer.load()` so slow responses from a previously selected resource cannot overwrite the current selection, and reset inline `replicas` scale input when switching resources.
+- **Log Streaming Lines Over 1 MiB**: Replaced `bufio.Scanner` with a chunked `bufio.Reader` loop in `logs.Pump` so log lines exceeding 1 MiB split cleanly instead of aborting the stream with `bufio.ErrTooLong`.
 - **Dock Logs & Shell Reconnect Loop**: Kept dock tab connection statuses in a separate `dockStatuses` map outside `app.dock` tab objects so status transitions no longer replace keyed tab items and restart `LogViewer` / `TerminalView` streams.
 - **DetailDrawer Container Image Truncation**: Truncated long container image names/tags with ellipsis so they no longer expand `DetailDrawer` width or cause horizontal scrolling.
 
