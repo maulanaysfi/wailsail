@@ -1,13 +1,53 @@
 <script lang="ts">
-  import { app } from "../lib/store.svelte";
-  import { defaultExpandedGroups, groupResources, resourceKey } from "../lib/resources";
+  import { app, cssZoom } from "../lib/store.svelte";
+  import { abbreviateKind, defaultExpandedGroups, groupResources, resourceKey } from "../lib/resources";
+  import { measureTextWidth } from "../lib/format";
   import type { ResourceType } from "../lib/api";
+
+  const DEFAULT_W = 216;
+  const MIN_W = 144;
 
   let query = $state("");
   let toggled = $state<Record<string, boolean>>({});
+  let width = $state(DEFAULT_W);
+  let resizing = $state(false);
 
   const groups = $derived(groupResources(app.resources));
   const pinned = $derived(app.resources.filter((r) => app.isPinned(r)));
+
+  const maxWidth = $derived.by(() => {
+    let maxText = 0;
+    for (const r of app.resources) {
+      maxText = Math.max(maxText, measureTextWidth(abbreviateKind(r.kind), '13px "Google Sans Flex", sans-serif'));
+    }
+    for (const g of groups) {
+      maxText = Math.max(maxText, measureTextWidth(g.name.toUpperCase(), '600 11px "Google Sans Flex", sans-serif'));
+    }
+    // Account for left/right padding (24+16), pin slot (24), and scrollbar (12).
+    return Math.max(DEFAULT_W, maxText + 76);
+  });
+
+  $effect(() => {
+    if (width > maxWidth) width = maxWidth;
+  });
+
+  function startResize(e: PointerEvent) {
+    e.preventDefault();
+    const z = cssZoom();
+    const startX = e.clientX;
+    const startW = width;
+    resizing = true;
+    const move = (ev: PointerEvent) => {
+      width = Math.min(maxWidth, Math.max(MIN_W, Math.round(startW + (ev.clientX - startX) / z)));
+    };
+    const up = () => {
+      resizing = false;
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
 
   function isCollapsed(name: string): boolean {
     if (name in toggled) return toggled[name];
@@ -23,6 +63,7 @@
     q = q.toLowerCase();
     return (
       r.kind.toLowerCase().includes(q) ||
+      abbreviateKind(r.kind).toLowerCase().includes(q) ||
       r.resource.includes(q) ||
       (r.shortNames ?? []).some((s) => s === q) ||
       r.group.includes(q)
@@ -41,6 +82,7 @@
 </script>
 
 {#snippet item(r: ResourceType)}
+  {@const displayKind = abbreviateKind(r.kind)}
   <li>
     <button
       class="item"
@@ -48,7 +90,7 @@
       onclick={() => app.selectResource(r)}
       title={`Browse ${r.kind} (${r.resource}.${r.group || "core"}/${r.version})`}
     >
-      <span class="kind">{r.kind}</span>
+      <span class="kind">{displayKind}</span>
       <span
         class="pin"
         class:on={app.isPinned(r)}
@@ -65,7 +107,7 @@
   </li>
 {/snippet}
 
-<nav class="sidebar">
+<nav class="sidebar" class:resizing style={`width:${width}px`}>
   <div class="search-wrap">
     <input class="search" placeholder="Find resource type…" bind:value={query} />
     {#if query}
@@ -109,15 +151,35 @@
       </section>
     {/each}
   </div>
+  <div
+    class="resizer"
+    role="separator"
+    aria-orientation="vertical"
+    onpointerdown={startResize}
+    ondblclick={() => (width = DEFAULT_W)}
+  ></div>
 </nav>
 
 <style>
   .sidebar {
+    position: relative;
     display: flex;
     flex-direction: column;
     border-right: 1px solid var(--border);
     background: var(--panel);
     min-height: 0;
+  }
+  .sidebar.resizing {
+    user-select: none;
+  }
+  .resizer {
+    position: absolute;
+    top: 0;
+    right: -3px;
+    bottom: 0;
+    width: 6px;
+    cursor: col-resize;
+    z-index: 2;
   }
   .search-wrap {
     position: relative;

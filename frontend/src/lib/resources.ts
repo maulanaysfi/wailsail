@@ -153,3 +153,17 @@ export function groupResources(all: ResourceType[]): ResourceGroup[] {
 
 export const scalableKinds = new Set(["apps/Deployment", "apps/StatefulSet", "apps/ReplicaSet"]);
 export const restartableKinds = new Set(["apps/Deployment", "apps/StatefulSet", "apps/DaemonSet"]);
+
+const kindAbbreviations: Record<string, string> = {
+  CustomResourceDefinition: "CRD",
+  PersistentVolumeClaim: "PVC",
+  PodDisruptionBudget: "PDB",
+  HorizontalPodAutoscaler: "HPA",
+  VerticalPodAutoscaler: "VPA",
+  CertificateSigningRequest: "CSR",
+};
+
+/** Short display name for well-known 3+ word resource kinds in the sidebar. */
+export function abbreviateKind(kind: string): string {
+  return kindAbbreviations[kind] ?? kind;
+}

@@ -12,7 +12,7 @@
     type WatchEvent,
   } from "../lib/api";
   import { app, cssZoom, refOf } from "../lib/store.svelte";
-  import { age, buildResourceMeter, compareCells, toneFor, type ResourceMeter } from "../lib/format";
+  import { age, buildResourceMeter, compareCells, measureTextWidth, toneFor, type ResourceMeter } from "../lib/format";
   import { kindKey, resourceKey } from "../lib/resources";
 
   const ROW_H = 32;
@@ -125,17 +125,18 @@
     return buildResourceMeter("memory", u ? u.memoryBytes : null, pr?.memoryRequest, pr?.memoryLimit);
   }
 
-  const maxMeterCh = $derived.by<{ cpu: number; memory: number }>(() => {
+  const maxMeterPx = $derived.by<{ cpu: number; memory: number }>(() => {
     version;
     podMetrics;
-    if (!isPod) return { cpu: 3, memory: 3 };
-    let cpu = 3;
-    let memory = 3;
+    if (!isPod) return { cpu: 28, memory: 28 };
+    const font = '12px "Google Sans Flex", sans-serif';
+    let cpu = 24;
+    let memory = 24;
     for (const r of rows.values()) {
-      cpu = Math.max(cpu, podMeterFor(r, "cpu").usedText.length);
-      memory = Math.max(memory, podMeterFor(r, "memory").usedText.length);
+      cpu = Math.max(cpu, measureTextWidth(podMeterFor(r, "cpu").usedText, font));
+      memory = Math.max(memory, measureTextWidth(podMeterFor(r, "memory").usedText, font));
     }
-    return { cpu, memory };
+    return { cpu: cpu + 4, memory: memory + 4 };
   });
 
   interface DisplayCol {
@@ -410,9 +411,9 @@
   }
 </script>
 
-{#snippet cellMeter(meter: ResourceMeter, maxCh: number)}
+{#snippet cellMeter(meter: ResourceMeter, maxPx: number)}
   {#if meter.showBar}
-    <div class="cell-meter" style={`--text-w:${maxCh}ch`}>
+    <div class="cell-meter" style={`--text-w:${maxPx}px`}>
       <span class="cell-meter-text">{meter.usedText}</span>
       <div class="meter-track" title={meter.hoverText}>
         <div class={`meter-fill tone-bg-${meter.tone}`} style={`width:${meter.usedPct}%`}></div>
@@ -481,7 +482,7 @@
           <tr class:selected={isSelected(r)} onclick={() => select(r)}>
             {#each displayCols as c (c.key)}
               {#if c.meter}
-                <td>{@render cellMeter(podMeterFor(r, c.meter), maxMeterCh[c.meter])}</td>
+                <td>{@render cellMeter(podMeterFor(r, c.meter), maxMeterPx[c.meter])}</td>
               {:else}
                 {@const v = c.get(r)}
                 <td class={c.status ? `tone-${toneFor(v)}` : ""} class:name-col={c.key === "c0" || c.key === "name"}>{v}</td>
@@ -652,7 +653,7 @@
   }
   .cell-meter {
     display: grid;
-    grid-template-columns: var(--text-w, 4ch) minmax(48px, 1fr);
+    grid-template-columns: var(--text-w, 32px) minmax(48px, 1fr);
     align-items: center;
     gap: var(--space-1);
   }
@@ -662,6 +663,7 @@
     font-size: 12px;
     font-variant-numeric: tabular-nums;
     color: var(--text);
+    white-space: nowrap;
   }
   .cell-meter-text {
     text-align: left;

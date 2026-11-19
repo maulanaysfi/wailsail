@@ -81,6 +81,14 @@ body,
   font-family: var(--sans);
   font-size: 13px;
   overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+input,
+textarea {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 #app {

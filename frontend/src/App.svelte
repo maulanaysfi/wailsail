@@ -111,7 +111,7 @@
   }
   .workspace {
     display: grid;
-    grid-template-columns: 216px 1fr;
+    grid-template-columns: auto 1fr;
     flex: 1;
     min-height: 0;
   }

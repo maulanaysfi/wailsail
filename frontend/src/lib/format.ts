@@ -201,3 +201,18 @@ export function buildResourceMeter(
     hoverText: `Used: ${usedText} / Request: ${requestText} / Limit: ${limitText}`,
   };
 }
+
+let measureCtx: CanvasRenderingContext2D | null | undefined;
+
+/** Measure rendered text width in pixels for a CSS font string. */
+export function measureTextWidth(text: string, font: string): number {
+  if (!text) return 0;
+  if (measureCtx === undefined && typeof document !== "undefined") {
+    measureCtx = document.createElement("canvas").getContext("2d");
+  }
+  if (measureCtx) {
+    measureCtx.font = font;
+    return Math.ceil(measureCtx.measureText(text).width);
+  }
+  return text.length * 8;
+}

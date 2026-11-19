@@ -11,12 +11,16 @@
   let events = $state<EventInfo[]>([]);
   let metrics = $state<Record<string, ContainerMetrics>>({});
   let yaml = $state("");
+  let neatYaml = $state("");
+  let neat = $state(false);
   let draft = $state("");
   let editing = $state(false);
   let loading = $state(false);
   let saving = $state(false);
   let error = $state("");
   let width = $state(600);
+  let expandedMeta = $state<Record<string, boolean>>({});
+  let copiedId = $state("");
 
   const kk = $derived(kindKey(sel.type));
   const isPod = $derived(kk === "/Pod");
@@ -24,7 +28,8 @@
   const canForward = $derived(kk === "/Pod" || kk === "/Service");
   const canScale = $derived(scalableKinds.has(kk));
   const canRestart = $derived(restartableKinds.has(kk));
-  const dirty = $derived(editing && draft !== yaml);
+  const activeYaml = $derived(neat ? neatYaml : yaml);
+  const dirty = $derived(editing && draft !== activeYaml);
 
   async function load() {
     loading = true;
@@ -35,7 +40,8 @@
       events = detail.events ?? [];
       metrics = (detail.metrics as Record<string, ContainerMetrics>) ?? {};
       yaml = detail.yaml ?? "";
-      if (!editing) draft = yaml;
+      neatYaml = detail.neatYaml ?? yaml;
+      if (!editing) draft = neat ? neatYaml : yaml;
     } catch (e) {
       error = errorMessage(e);
     } finally {
@@ -49,11 +55,12 @@
     sel.namespace;
     sel.type;
     editing = false;
+    expandedMeta = {};
     load();
   });
 
   function startEdit() {
-    draft = yaml;
+    draft = activeYaml;
     editing = true;
     tab = "yaml";
   }
@@ -61,7 +68,25 @@
   async function cancelEdit() {
     if (dirty && !(await app.confirm("Discard changes?", "Your edits to this resource will be lost."))) return;
     editing = false;
-    draft = yaml;
+    draft = activeYaml;
+  }
+
+  async function copyValue(value: string, id: string, label = "value") {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      copiedId = id;
+      setTimeout(() => {
+        if (copiedId === id) copiedId = "";
+      }, 1200);
+    } catch (e) {
+      app.toast(`Could not copy ${label}: ${errorMessage(e)}`, "error");
+    }
+  }
+
+  function toggleExpand(key: string) {
+    if (window.getSelection()?.toString()) return;
+    expandedMeta[key] = !expandedMeta[key];
   }
 
   async function save() {
@@ -176,6 +201,7 @@
     value: string;
     tone?: string;
     mono?: boolean;
+    copy?: boolean;
   }
 
   const specRows = $derived.by<KV[]>(() => {
@@ -183,9 +209,9 @@
     const out: KV[] = [];
     const kind = sel.type.kind;
 
-    const add = (label: string, val: unknown, opts?: { tone?: string; mono?: boolean }) => {
+    const add = (label: string, val: unknown, opts?: { tone?: string; mono?: boolean; copy?: boolean }) => {
       if (val === undefined || val === null || val === "") return;
-      out.push({ label, value: String(val), tone: opts?.tone, mono: opts?.mono });
+      out.push({ label, value: String(val), tone: opts?.tone, mono: opts?.mono, copy: opts?.copy });
     };
 
     if (kind === "Deployment" || kind === "StatefulSet" || kind === "ReplicaSet") {
@@ -201,7 +227,7 @@
         const ru = spec.strategy.rollingUpdate;
         add("Rolling update", `maxSurge=${ru.maxSurge ?? "—"}, maxUnavailable=${ru.maxUnavailable ?? "—"}`, { mono: true });
       }
-      add("Service name", spec.serviceName, { mono: true });
+      add("Service name", spec.serviceName, { mono: true, copy: true });
       add("Pod management", spec.podManagementPolicy);
       add("Min ready seconds", spec.minReadySeconds);
       add("Revision history limit", spec.revisionHistoryLimit);
@@ -219,24 +245,24 @@
       add("Phase", status.phase, { tone: toneFor(status.phase ?? "") });
       add("Reason", status.reason);
       add("QoS class", status.qosClass);
-      add("Node", spec.nodeName, { mono: true });
-      add("Pod IP", status.podIP, { mono: true });
-      add("Host IP", status.hostIP, { mono: true });
-      add("Service account", spec.serviceAccountName, { mono: true });
+      add("Node", spec.nodeName, { mono: true, copy: true });
+      add("Pod IP", status.podIP, { mono: true, copy: true });
+      add("Host IP", status.hostIP, { mono: true, copy: true });
+      add("Service account", spec.serviceAccountName, { mono: true, copy: true });
       add("Restart policy", spec.restartPolicy);
       add("Priority class", spec.priorityClassName);
     } else if (kind === "Service") {
       add("Type", spec.type);
-      add("Cluster IP", spec.clusterIP, { mono: true });
+      add("Cluster IP", spec.clusterIP, { mono: true, copy: true });
       if (Array.isArray(spec.externalIPs) && spec.externalIPs.length) {
-        add("External IPs", spec.externalIPs.join(", "), { mono: true });
+        add("External IPs", spec.externalIPs.join(", "), { mono: true, copy: true });
       }
       const lbIng = status.loadBalancer?.ingress;
       if (Array.isArray(lbIng) && lbIng.length) {
         add(
           "LoadBalancer ingress",
           lbIng.map((i: any) => i.ip || i.hostname).filter(Boolean).join(", "),
-          { mono: true },
+          { mono: true, copy: true },
         );
       }
       add("Session affinity", spec.sessionAffinity);
@@ -247,11 +273,11 @@
           spec.ports
             .map((p: any) => `${p.name ? p.name + ":" : ""}${p.port}${p.nodePort ? ":" + p.nodePort : ""} -> ${p.targetPort ?? p.port}/${p.protocol ?? "TCP"}`)
             .join(", "),
-          { mono: true },
+          { mono: true, copy: true },
         );
       }
     } else if (kind === "Ingress") {
-      add("Ingress class", spec.ingressClassName, { mono: true });
+      add("Ingress class", spec.ingressClassName, { mono: true, copy: true });
       if (Array.isArray(spec.rules) && spec.rules.length) {
         const rules = spec.rules.flatMap((r: any) =>
           (r.http?.paths ?? []).map(
@@ -259,10 +285,10 @@
               `${r.host || "*"}${p.path || "/"} -> ${p.backend?.service?.name ?? "?"}:${p.backend?.service?.port?.number ?? p.backend?.service?.port?.name ?? "?"}`,
           ),
         );
-        add("Rules", rules.join("; "), { mono: true });
+        add("Rules", rules.join("; "), { mono: true, copy: true });
       }
     } else if (kind === "Job" || kind === "CronJob") {
-      add("Schedule", spec.schedule, { mono: true });
+      add("Schedule", spec.schedule, { mono: true, copy: true });
       if (spec.suspend !== undefined) add("Suspend", String(spec.suspend));
       add("Concurrency policy", spec.concurrencyPolicy);
       add("Completions", spec.completions);
@@ -274,15 +300,15 @@
       add("Last schedule", status.lastScheduleTime);
     } else if (kind === "PersistentVolumeClaim" || kind === "PersistentVolume") {
       add("Phase", status.phase, { tone: toneFor(status.phase ?? "") });
-      add("Storage class", spec.storageClassName, { mono: true });
+      add("Storage class", spec.storageClassName, { mono: true, copy: true });
       if (Array.isArray(spec.accessModes)) add("Access modes", spec.accessModes.join(", "));
       add("Capacity", status.capacity?.storage ?? spec.capacity?.storage ?? spec.resources?.requests?.storage, { mono: true });
-      add("Volume name", spec.volumeName, { mono: true });
+      add("Volume name", spec.volumeName, { mono: true, copy: true });
       add("Volume mode", spec.volumeMode);
       add("Reclaim policy", spec.persistentVolumeReclaimPolicy);
     } else if (kind === "Node") {
       const info = status.nodeInfo ?? {};
-      add("Kubelet", info.kubeletVersion, { mono: true });
+      add("Kubelet", info.kubeletVersion, { mono: true, copy: true });
       add("OS / Arch", info.osImage ? `${info.osImage} (${info.architecture ?? ""})` : "");
       add("Kernel", info.kernelVersion, { mono: true });
       add("Runtime", info.containerRuntimeVersion, { mono: true });
@@ -291,7 +317,7 @@
         add(
           "Addresses",
           status.addresses.map((a: any) => `${a.type}=${a.address}`).join(", "),
-          { mono: true },
+          { mono: true, copy: true },
         );
       }
       if (status.allocatable) {
@@ -396,17 +422,41 @@
   });
 </script>
 
-{#snippet resourceRow(meter: ResourceMeter)}
-  <div class="meter-row">
+{#snippet copyBtn(value: string, id: string, label: string)}
+  <button
+    class="copy-btn"
+    class:copied={copiedId === id}
+    onclick={(e) => {
+      e.stopPropagation();
+      copyValue(value, id, label);
+    }}
+    title={copiedId === id ? `Copied ${label}` : `Copy ${label}`}
+    aria-label={`Copy ${label}`}
+  >
+    {#if copiedId === id}
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <polyline points="20 6 9 17 4 12" />
+      </svg>
+    {:else}
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+      </svg>
+    {/if}
+  </button>
+{/snippet}
+
+{#snippet resourceBox(meter: ResourceMeter)}
+  <div class="meter-box">
     <span class="meter-label">{meter.label}</span>
     {#if meter.showBar}
-      <span class="meter-val">{meter.usedText} / {meter.limitText !== "none" ? meter.limitText : meter.scaleMaxText}</span>
       <div class="meter-track" title={meter.hoverText}>
         <div class={`meter-fill tone-bg-${meter.tone}`} style={`width:${meter.usedPct}%`}></div>
         {#if meter.requestMarkPct !== null}
           <span class="meter-req-mark" class:warn={meter.requestMarkWarn} style={`left:${meter.requestMarkPct}%`}></span>
         {/if}
       </div>
+      <span class="meter-val">{meter.usedText} / {meter.limitText !== "none" ? meter.limitText : meter.scaleMaxText}</span>
     {:else}
       <span class="meter-plain">{meter.usedText}</span>
     {/if}
@@ -540,30 +590,42 @@
           <h4>Metadata</h4>
           <dl class="kv-grid">
             <dt>Name</dt>
-            <dd class="mono">{metadata.name ?? sel.name}</dd>
+            <dd class="val-copy">
+              {@render copyBtn(metadata.name ?? sel.name, "meta:name", "name")}
+              <span class="mono val-text">{metadata.name ?? sel.name}</span>
+            </dd>
             {#if metadata.namespace}
               <dt>Namespace</dt>
-              <dd class="mono">{metadata.namespace}</dd>
+              <dd class="val-copy">
+                {@render copyBtn(metadata.namespace, "meta:ns", "namespace")}
+                <span class="mono val-text">{metadata.namespace}</span>
+              </dd>
             {/if}
             <dt>API version</dt>
-            <dd class="mono">{obj.apiVersion ?? sel.type.version} ({obj.kind ?? sel.type.kind})</dd>
+            <dd class="mono val-text">{obj.apiVersion ?? sel.type.version} ({obj.kind ?? sel.type.kind})</dd>
             {#if metadata.creationTimestamp}
               <dt>Created</dt>
-              <dd>{age(metadata.creationTimestamp, app.now)} ago <span class="muted">({metadata.creationTimestamp})</span></dd>
+              <dd class="val-text">{age(metadata.creationTimestamp, app.now)} ago <span class="muted">({metadata.creationTimestamp})</span></dd>
             {/if}
             {#if metadata.uid}
               <dt>UID</dt>
-              <dd class="mono">{metadata.uid}</dd>
+              <dd class="val-copy">
+                {@render copyBtn(metadata.uid, "meta:uid", "UID")}
+                <span class="mono val-text">{metadata.uid}</span>
+              </dd>
             {/if}
             {#if metadata.resourceVersion}
               <dt>Resource version</dt>
-              <dd class="mono">{metadata.resourceVersion}{metadata.generation ? ` (gen ${metadata.generation})` : ""}</dd>
+              <dd class="val-copy">
+                {@render copyBtn(metadata.resourceVersion, "meta:rv", "resource version")}
+                <span class="mono val-text">{metadata.resourceVersion}{metadata.generation ? ` (gen ${metadata.generation})` : ""}</span>
+              </dd>
             {/if}
             {#if owners.length > 0}
               <dt>Controlled by</dt>
               <dd class="chips">
                 {#each owners as o (`${o.kind}/${o.name}`)}
-                  <span class="chip mono">{o.kind}/{o.name}</span>
+                  <span class="chip mono val-text">{o.kind}/{o.name}</span>
                 {/each}
               </dd>
             {/if}
@@ -571,7 +633,7 @@
               <dt>Finalizers</dt>
               <dd class="chips">
                 {#each finalizers as f (f)}
-                  <span class="chip mono">{f}</span>
+                  <span class="chip mono val-text">{f}</span>
                 {/each}
               </dd>
             {/if}
@@ -582,7 +644,22 @@
               {:else}
                 <div class="chips">
                   {#each labels as [k, v] (k)}
-                    <span class="chip mono">{k}={v}</span>
+                    {@const ek = `lbl:${k}`}
+                    {@const long = v.length > 100}
+                    {@const open = !!expandedMeta[ek]}
+                    <span class="chip mono" class:expanded={open}>
+                      <span class="chip-k">{k}=</span><span
+                        class="chip-v val-text"
+                        class:expandable={long}
+                        role={long ? "button" : undefined}
+                        onclick={long ? () => toggleExpand(ek) : undefined}
+                        onkeydown={long ? (e) => e.key === "Enter" && toggleExpand(ek) : undefined}
+                      >{long && !open ? v.slice(0, 100) : v}</span>{#if long}<button
+                          class="ellipsis-btn"
+                          onclick={() => toggleExpand(ek)}
+                          title={open ? "Collapse label value" : "Expand full label value"}
+                        >{open ? " (less)" : "…"}</button>{/if}
+                    </span>
                   {/each}
                 </div>
               {/if}
@@ -594,9 +671,25 @@
               {:else}
                 <div class="ann-list">
                   {#each annotations as [k, v] (k)}
+                    {@const ek = `ann:${k}`}
+                    {@const long = v.length > 100}
+                    {@const open = !!expandedMeta[ek]}
                     <div class="ann-row">
                       <span class="mono ann-k">{k}</span>
-                      <span class="mono ann-v">{v}</span>
+                      <span
+                        class="mono ann-v val-text"
+                        class:expandable={long}
+                        role={long ? "button" : undefined}
+                        onclick={long ? () => toggleExpand(ek) : undefined}
+                        onkeydown={long ? (e) => e.key === "Enter" && toggleExpand(ek) : undefined}
+                      >{long && !open ? v.slice(0, 100) : v}{#if long}<button
+                            class="ellipsis-btn"
+                            onclick={(e) => {
+                              e.stopPropagation();
+                              toggleExpand(ek);
+                            }}
+                            title={open ? "Collapse annotation value" : "Expand full annotation value"}
+                          >{open ? " (less)" : "…"}</button>{/if}</span>
                     </div>
                   {/each}
                 </div>
@@ -611,13 +704,20 @@
             <dl class="kv-grid">
               {#each specRows as r (r.label)}
                 <dt>{r.label}</dt>
-                <dd class={`${r.mono ? "mono " : ""}${r.tone ? `tone-${r.tone}` : ""}`}>{r.value}</dd>
+                {#if r.copy}
+                  <dd class="val-copy">
+                    {@render copyBtn(r.value, `spec:${r.label}`, r.label)}
+                    <span class={`val-text ${r.mono ? "mono " : ""}${r.tone ? `tone-${r.tone}` : ""}`}>{r.value}</span>
+                  </dd>
+                {:else}
+                  <dd class={`val-text ${r.mono ? "mono " : ""}${r.tone ? `tone-${r.tone}` : ""}`}>{r.value}</dd>
+                {/if}
               {/each}
               {#if selectorEntries.length > 0}
                 <dt>Selector</dt>
                 <dd class="chips">
                   {#each selectorEntries as [k, v] (k)}
-                    <span class="chip mono">{k}={v}</span>
+                    <span class="chip mono"><span class="chip-k">{k}=</span><span class="val-text">{v}</span></span>
                   {/each}
                 </dd>
               {/if}
@@ -632,10 +732,10 @@
               {#each containersList as c (`${c.role}:${c.name}`)}
                 <div class="container-row">
                   <div class="container-head">
-                    <strong class="mono">{c.name}</strong>
+                    <strong class="mono val-text">{c.name}</strong>
                     {#if c.role !== "main"}<span class="pill">{c.role}</span>{/if}
-                    {#if c.state}<span class={`tone-${c.tone}`}>{c.state}</span>{/if}
-                    {#if c.restarts != null}<span class="muted">restarts: {c.restarts}</span>{/if}
+                    {#if c.state}<span class={`val-text tone-${c.tone}`}>{c.state}</span>{/if}
+                    {#if c.restarts != null}<span class="muted">restarts: <span class="val-text">{c.restarts}</span></span>{/if}
                     <span class="grow"></span>
                     {#if isPod}
                       <button class="mini" onclick={() => openDock("logs", c.name)} title={`View logs for container ${c.name}`}>
@@ -646,10 +746,15 @@
                       </button>
                     {/if}
                   </div>
-                  <div class="mono muted">{c.image}{c.ports ? ` (${c.ports})` : ""}</div>
+                  <div class="val-copy muted">
+                    {#if c.image}
+                      {@render copyBtn(c.image, `img:${c.role}:${c.name}`, "image")}
+                    {/if}
+                    <span class="mono val-text">{c.image}{c.ports ? ` (${c.ports})` : ""}</span>
+                  </div>
                   <div class="meters">
-                    {@render resourceRow(c.cpu)}
-                    {@render resourceRow(c.memory)}
+                    {@render resourceBox(c.cpu)}
+                    {@render resourceBox(c.memory)}
                   </div>
                 </div>
               {/each}
@@ -672,12 +777,12 @@
               <tbody>
                 {#each conditions as cond, idx (cond.type ?? idx)}
                   <tr>
-                    <td class="mono">{cond.type ?? "—"}</td>
-                    <td class={cond.status === "True" ? "tone-ok" : cond.status === "False" ? "tone-muted" : "tone-warn"}>
+                    <td class="mono val-text">{cond.type ?? "—"}</td>
+                    <td class={`val-text ${cond.status === "True" ? "tone-ok" : cond.status === "False" ? "tone-muted" : "tone-warn"}`}>
                       {cond.status ?? "—"}
                     </td>
-                    <td class="mono">{cond.reason ?? "—"}</td>
-                    <td>{cond.message ?? "—"}</td>
+                    <td class="mono val-text">{cond.reason ?? "—"}</td>
+                    <td class="val-text">{cond.message ?? "—"}</td>
                   </tr>
                 {/each}
               </tbody>
@@ -702,18 +807,18 @@
                 {#each events as ev, i (i)}
                   <tr>
                     <td class="col-reason">
-                      <span class={ev.type === "Warning" ? "tone-warn reason-name" : "reason-name"}>{ev.reason || ev.type}</span>
+                      <span class={`val-text ${ev.type === "Warning" ? "tone-warn reason-name" : "reason-name"}`}>{ev.reason || ev.type}</span>
                       {#if ev.count > 1}<span class="event-count">×{ev.count}</span>{/if}
                     </td>
                     <td>
-                      <div class="event-msg">{ev.message}</div>
+                      <div class="event-msg val-text">{ev.message}</div>
                       {#if ev.source || ev.subObject}
-                        <div class="mono muted event-meta">
+                        <div class="mono muted event-meta val-text">
                           {ev.source}{ev.source && ev.subObject ? " / " : ""}{ev.subObject}
                         </div>
                       {/if}
                     </td>
-                    <td class="col-age mono muted">{ev.lastSeen ? age(ev.lastSeen, app.now) : "—"}</td>
+                    <td class="col-age mono muted val-text">{ev.lastSeen ? age(ev.lastSeen, app.now) : "—"}</td>
                   </tr>
                 {/each}
               </tbody>
@@ -723,12 +828,20 @@
       {/if}
     </div>
   {:else}
+    <div class="yaml-bar">
+      <label class="neat-toggle">
+        <input type="checkbox" bind:checked={neat} disabled={editing} />
+        Neat
+      </label>
+      <span class="grow"></span>
+      {@render copyBtn(editing ? draft : activeYaml, "yaml:doc", neat ? "neated YAML" : "raw YAML")}
+    </div>
     <textarea
       class="yaml"
       class:editing
       spellcheck="false"
       readonly={!editing}
-      value={editing ? draft : yaml}
+      value={editing ? draft : activeYaml}
       oninput={(e) => (draft = e.currentTarget.value)}
       onkeydown={onKey}
       placeholder={loading ? "Loading…" : ""}
@@ -772,6 +885,44 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     color: var(--text-strong);
+    user-select: text;
+    -webkit-user-select: text;
+  }
+  .val-text {
+    user-select: text;
+    -webkit-user-select: text;
+  }
+  .val-copy {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+  .copy-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--muted);
+    align-self: center;
+  }
+  .copy-btn:hover:not(:disabled) {
+    color: var(--text-strong);
+    background: var(--hover);
+  }
+  .copy-btn.copied {
+    color: var(--ok);
+  }
+  .copy-btn svg {
+    width: 12px;
+    height: 12px;
   }
   .kind {
     font-size: 12px;
@@ -893,6 +1044,33 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .chip.expanded {
+    white-space: normal;
+    word-break: break-all;
+  }
+  .chip-k {
+    color: var(--muted);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .expandable {
+    cursor: pointer;
+  }
+  .ellipsis-btn {
+    display: inline;
+    min-height: 0;
+    padding: 0 var(--space-1);
+    margin-left: 2px;
+    border: 0;
+    background: transparent;
+    color: var(--accent);
+    font: inherit;
+    font-size: 11px;
+    line-height: inherit;
+  }
+  .ellipsis-btn:hover:not(:disabled) {
+    background: var(--hover);
+  }
   .ann-list {
     display: flex;
     flex-direction: column;
@@ -941,26 +1119,53 @@
   .meters {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: var(--space-3);
+    gap: var(--space-2);
     margin-top: var(--space-1);
   }
-  .meter-row {
-    display: grid;
-    grid-template-columns: auto auto minmax(48px, 1fr);
+  .meter-box {
+    display: flex;
+    flex-direction: column;
     align-items: center;
     gap: var(--space-1);
-    font-size: 12px;
+    padding: var(--space-2);
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    text-align: center;
     min-width: 0;
   }
+  .meter-box .meter-track {
+    width: 100%;
+  }
   .meter-label {
+    font-size: 11px;
     color: var(--muted);
   }
   .meter-val,
   .meter-plain {
     font-family: var(--sans);
-    text-align: left;
+    font-size: 12px;
+    text-align: center;
     color: var(--text-strong);
     font-variant-numeric: tabular-nums;
+    user-select: text;
+    -webkit-user-select: text;
+  }
+  .yaml-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-3);
+    border-bottom: 1px solid var(--border);
+    background: var(--code-bg);
+  }
+  .neat-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-size: 12px;
+    color: var(--muted);
+    cursor: pointer;
   }
   .ledger-table {
     width: 100%;
