@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Masked `Secret` keys after the first 4 characters (`****` for `<= 4` chars) with an eye toggle before each key, and masked `Secret` values with a constant 20-asterisk placeholder alongside eye and copy buttons before each value (base64-decoding UTF-8 text on reveal and copy, with base64 fallback for binary data).
 - **Log Text Selection & High-Contrast Timestamps**: Made container log text in `LogViewer` selectable while coloring Kubernetes timestamps in high contrast (`--accent`) and keeping timestamps non-selectable.
 - **Service Cluster FQDN in DetailDrawer**: Added a copyable `Cluster FQDN` (`<name>.<namespace>`) on the last line of `Service` `Specification & status` and removed the copy button from `Ports`.
+- **Unified Build, Test & Checksum Script (`scripts/build.sh`)**: Added `scripts/build.sh` to validate and test frontend/Go, build OS/arch-named release binaries into `bin/dist/`, and generate/verify deterministic `SHA256SUMS` (supporting `--test-only`, `--skip-tests`, and `--checksums-only` modes for GitHub Actions).
 
 ### Changed
 - **DetailDrawer Spec Mapper Extraction**: Extracted pure resource spec, selector, and container summary builders out of `DetailDrawer.svelte` into `frontend/src/lib/specs.ts`.
@@ -27,6 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **YAML Edit Escape Behavior**: Pressing `Esc` (or clicking `Cancel`) while editing YAML in `DetailDrawer` now discards edits without a confirmation prompt and exits edit mode without closing the drawer.
 
 ### Fixed
+- **LogViewer Empty Output Regression**: Combined `LogViewer` filtering and windowing into a single `view` `$derived.by` tracking `version` so in-place log ingestion always updates the UI when no search filter is active.
 - **Dock Tab Error Status**: Marked dock tabs as `disconnected` when `Kube.PodContainers` fails in `LogViewer` or `TerminalView` instead of leaving them stuck on `connecting`.
 - **Stream Registry Reused-ID Race**: Returned a per-stream `done` callback from `stream.Registry.Start` so an exiting stream cannot remove or cancel a newer stream registered under the same ID.
 - **Kubeconfig Reset Cache Race**: Added a generation counter in `kube.Manager` so in-flight `For` client builds cannot cache stale clients after `Reset` or `SetKubeconfigPaths`.

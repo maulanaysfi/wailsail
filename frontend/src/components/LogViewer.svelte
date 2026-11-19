@@ -133,26 +133,24 @@
     };
   });
 
-  const matched = $derived.by(() => {
+  // shortcut: fixed 16px row height estimate for spacers; wrapped lines render cleanly inside the 60-line overscan window.
+  const view = $derived.by(() => {
     version;
     const q = search.trim().toLowerCase();
-    return q ? entries.filter((e) => e.lower.includes(q)) : entries;
-  });
-
-  // shortcut: fixed 16px row height estimate for spacers; wrapped lines render cleanly inside the 60-line overscan window.
-  const win = $derived.by(() => {
-    const total = matched.length;
+    const list = q ? entries.filter((e) => e.lower.includes(q)) : entries;
+    const total = list.length;
     const page = Math.max(1, Math.ceil(viewportH / LINE_H));
+    let first: number;
+    let last: number;
     if (stickBottom) {
-      const last = total;
-      const first = Math.max(0, last - page - OVERSCAN * 2);
-      return { first, last };
+      last = total;
+      first = Math.max(0, last - page - OVERSCAN * 2);
+    } else {
+      first = Math.max(0, Math.floor(scrollTop / LINE_H) - OVERSCAN);
+      last = Math.min(total, Math.ceil((scrollTop + viewportH) / LINE_H) + OVERSCAN);
     }
-    const first = Math.max(0, Math.floor(scrollTop / LINE_H) - OVERSCAN);
-    const last = Math.min(total, Math.ceil((scrollTop + viewportH) / LINE_H) + OVERSCAN);
-    return { first, last };
+    return { total, first, last, items: list.slice(first, last) };
   });
-  const visible = $derived(matched.slice(win.first, win.last));
 
   function clearLogs() {
     entries = [];
@@ -218,11 +216,11 @@
   {#if error}<div class="banner error">{error}</div>{/if}
 
   <div class="out" bind:this={scroller} bind:clientHeight={viewportH} onscroll={onScroll}>
-    {#if win.first > 0}<div aria-hidden="true" style={`height:${win.first * LINE_H}px`}></div>{/if}
-    {#each visible as entry (entry.id)}
+    {#if view.first > 0}<div aria-hidden="true" style={`height:${view.first * LINE_H}px`}></div>{/if}
+    {#each view.items as entry (entry.id)}
       <div class="line">{#if entry.ts}<span class="ts">{entry.ts}</span>{/if}{entry.body}</div>
     {/each}
-    {#if win.last < matched.length}<div aria-hidden="true" style={`height:${(matched.length - win.last) * LINE_H}px`}></div>{/if}
+    {#if view.last < view.total}<div aria-hidden="true" style={`height:${(view.total - view.last) * LINE_H}px`}></div>{/if}
   </div>
 </div>
 

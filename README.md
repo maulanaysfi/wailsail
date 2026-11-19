@@ -1,127 +1,81 @@
 <p align="center">
-  <img src="icon.png" alt="wailsail icon" width="128" />
+  <img src="icon.png" alt="wailsail icon" width="112" />
 </p>
 
 <h1 align="center">wailsail</h1>
 
 <p align="center">
-  <strong>An original Kubernetes desktop client written in Go with Wails v3</strong><br />
+  <strong>Lightweight Kubernetes desktop client built with Go, Wails v3, and Svelte 5</strong><br />
   <em>Sail as far as you can, Captain! These nodes are in your control!</em>
+</p>
+
+<p align="center">
+  <a href="#highlights">Highlights</a> ·
+  <a href="#installation">Installation</a> ·
+  <a href="#development">Development</a> ·
+  <a href="#keyboard-shortcuts">Shortcuts</a> ·
+  <a href="CHANGELOG.md">Changelog</a>
 </p>
 
 ---
 
-## Features
+**`wailsail`** connects straight to your Kubernetes clusters via `k8s.io/client-go` using your existing kubeconfigs—no proxy server or Electron bundle required.
 
-- **Contexts, Namespaces & Custom Kubeconfigs** — Loads merged kubeconfigs from custom files and scanned folders (defaulting to `~/.kube/config` plus `$KUBECONFIG`), switches clusters quickly, remembers per-context namespaces, and displays cluster server versions.
-- **Discovery-Driven Resource Browser** — Automatically discovers core and custom API resources (`CRDs`), groups them cleanly in a resizable sidebar (with popular acronyms like `PVC`, `PDB`, `HPA`, `CRD`), and lets you pin favorite resource types.
-- **Live Watch Tables** — Streams server-side `meta.k8s.io/v1` `Table` views with 150ms batched updates, automatic relist on `410 Gone`, wide columns by default, draggable & resizable columns (persisted across restarts), live Pod CPU & memory usage meters, and one-click `Jump to Owner` navigation.
-- **Resource Overview, Events & YAML Inspector** — Inspect structured metadata (with quick copy buttons and expandable labels/annotations), workload/service/node specifications, masked/uncensorable `Secret` & `ConfigMap` data pairs, live container CPU & memory progress bars (`metrics.k8s.io/v1beta1`), conditions, and object-related Kubernetes events, or switch to the YAML tab with optional **Neat** cleanup (`kubectl-neat`-style state stripping), copy, inline editing (`Tab` indentation, `Ctrl/Cmd+S` Server-Side Apply), and scale, rollout restart, or delete actions.
-- **Live Container Logs** — Follow pod/init/ephemeral container logs with tail selection, timestamps, previous container logs, pause/resume, and real-time line filtering.
-- **Interactive Exec Terminal** — Open container shells inside a bottom dock powered by `@xterm/xterm` with auto-fit resizing and automatic `bash` / `sh` detection.
-- **Port Forwarding** — Forward Pod or Service ports to `127.0.0.1` (auto-assigning local ports when `0`) with live status tracking and one-click stop.
-- **Persistent Preferences, Scaling & Themes** — Light, Dark, and System themes, UI screen scale (`50%`–`150%`), custom kubeconfig paths, column orders/widths, and per-context state persisted to `<UserConfigDir>/wailsail/settings.json`.
+## Highlights
 
----
+- **Multi-Cluster & Custom Kubeconfigs** — Merges `~/.kube/config`, `$KUBECONFIG`, and custom files/folders, remembers per-context namespaces, and monitors live cluster health.
+- **Discovery-Driven Browser** — Automatically discovers built-in and custom resources (`CRDs`) in a resizable, pinnable sidebar.
+- **Live Watch Tables** — Streams `meta.k8s.io/v1` tables with batched updates, draggable/resizable columns, live Pod CPU & memory usage meters, and one-click `Jump to Owner`.
+- **Detail Drawer & Neat YAML** — Inspect metadata, resource specs, masked/uncensorable `Secret` & `ConfigMap` data pairs, container meters, conditions, and events—or edit YAML with optional **Neat** cleanup and Server-Side Apply.
+- **Persistent Logs & Container Shell Dock** — Follow selectable container logs (with high-contrast timestamps and filtering) and open interactive `@xterm/xterm` shells side-by-side in a persistent bottom dock.
+- **Port Forwarding & Preferences** — Forward Pod or Service ports to `127.0.0.1`, switch Light/Dark/System themes, and scale the UI (`50%`–`150%`).
 
-## Tech Stack & Architecture
+## Installation
 
-- **Backend (`internal/`, `main.go`)**: Go + [Wails v3](https://v3.wails.io/) + [`k8s.io/client-go`](https://github.com/kubernetes/client-go)
-  - `kube.Service` — kubeconfig client caching, resource discovery, live `Table` watches, YAML get/apply/delete/scale/restart
-  - `logs.Service` — batched pod log streaming
-  - `exec.Service` — WebSocket/SPDY interactive TTY exec sessions
-  - `portforward.Service` — SPDY port-forwarding for Pods and Services
-  - `settings.Service` — atomic JSON preferences storage
-- **Frontend (`frontend/`)**: Svelte 5 (runes) + TypeScript + Vite + `@xterm/xterm` + generated Wails v3 bindings
+### Prebuilt Binaries
 
----
+Download the latest binary and `SHA256SUMS` from [GitHub Releases](https://github.com/maulanaysfi/wailsail/releases), then verify the checksum before running:
 
-## Prerequisites
-
-- **Go** `1.26+`
-- **Node.js** & **npm**
-- **Wails v3 CLI** (`v3.0.0`):
-  ```bash
-  go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0
-  ```
-- **Linux desktop libraries** (GTK4 & WebKitGTK 6.0):
-  - Ubuntu / Debian: `libgtk-4-dev libwebkitgtk-6.0-dev`
-  - Arch Linux: `gtk4 webkitgtk-6.0`
-  - Fedora: `gtk4-devel webkitgtk6.0-devel`
-- A valid Kubernetes config via `$KUBECONFIG` or `~/.kube/config`
-
----
-
-## Development & Build
-
-### Run in Development Mode
 ```bash
+# Linux
+sha256sum -c --ignore-missing SHA256SUMS
+
+# macOS
+shasum -a 256 -c --ignore-missing SHA256SUMS
+```
+
+```powershell
+# Windows (PowerShell)
+Get-FileHash .\wailsail-<version>-windows-amd64.exe -Algorithm SHA256
+```
+
+### Build from Source
+
+Requires **Go 1.26+**, **Node.js & npm**, **[Wails v3 CLI](https://v3.wails.io/)** (`go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0`), and on Linux **GTK4 + WebKitGTK 6.0** (`libgtk-4-dev libwebkitgtk-6.0-dev` on Debian/Ubuntu, `gtk4 webkitgtk-6.0` on Arch, `gtk4-devel webkitgtk6.0-devel` on Fedora).
+
+```bash
+./scripts/build.sh
+```
+
+Validated binaries and `SHA256SUMS` are written to `bin/dist/`.
+
+## Development
+
+```bash
+# Live development mode
 wails3 dev
+
+# Validate and run frontend + Go tests only
+./scripts/build.sh --test-only
+
+# Full validate, test, desktop build, and SHA256SUMS
+./scripts/build.sh
 ```
 
-### Build Production Binary
-```bash
-wails3 build
-```
-The compiled binary is written to `bin/wailsail` (or `bin/wailsail.exe` on Windows).
-
-### Run Checks & Tests
-```bash
-# Backend build, vet, and unit tests
-go build ./...
-go vet ./...
-go test ./...
-
-# Frontend typecheck, unit tests, and production bundle
-cd frontend
-npm install
-npm run check
-npm test
-npm run build
-```
-
-> **Live Cluster Smoke Test (optional):**
-> ```bash
-> WAILSAIL_LIVE_CONTEXT=<your-context> go test ./internal/kube -run TestLiveCluster -v
-> ```
-
----
-
-## Project Structure
-
-```text
-.
-├── main.go                 # Wails v3 entry point (embeds frontend/dist & icon.png)
-├── icon.png                # Canonical application icon
-├── Taskfile.yml            # Wails v3 build/package tasks
-├── internal/
-│   ├── exec/               # Container TTY exec service
-│   ├── kube/               # Kubeconfig manager, table parser, watcher, CRUD service
-│   ├── logs/               # Container log streaming service
-│   ├── portforward/        # Pod/Service port-forward service
-│   ├── settings/           # User preferences persistence
-│   └── stream/             # Cancellable stream registry & emitter
-├── frontend/
-│   ├── index.html          # App shell with favicon
-│   ├── public/             # Static assets (icon.png, style.css)
-│   ├── bindings/           # Generated Wails v3 TypeScript bindings
-│   └── src/
-│       ├── App.svelte
-│       ├── lib/            # API wrapper, formatters, resource grouping, Svelte store
-│       └── components/     # UI components (table, drawer, dock, logs, terminal, modals)
-└── build/                  # Wails v3 platform configs, icons, and packaging assets
-```
-
----
+See [AGENTS.md](AGENTS.md) for architecture and service contracts, and [RELEASE.md](RELEASE.md) for versioning and release steps.
 
 ## Keyboard Shortcuts
 
-- `Esc` — Close open confirmation dialogs, modals, or the detail drawer
-- `Ctrl/Cmd + S` — Apply edits while editing resource YAML in the detail drawer
+- `Esc` — Discard active YAML edits, or close open dialogs and the detail drawer
+- `Ctrl/Cmd + S` — Apply changes while editing resource YAML
 - `Tab` — Insert 2 spaces while editing resource YAML
-
----
-
-## Releasing
-
-See [RELEASE.md](RELEASE.md) for the full list of version placeholders and release checklist.

@@ -38,22 +38,32 @@ Update every file below before tagging a release. Note that Windows manifests an
    ```
 2. **Update all version placeholders** listed in Section 1 to the target version (`X.Y.Z[-beta]`).
 3. **Update `CHANGELOG.md`**: Move `[Unreleased]` entries under `## [X.Y.Z-beta] - YYYY-MM-DD`.
-4. **Run full verification**:
-   ```bash
-   cd frontend && npm run check && npm run build && cd ..
-   go build . ./internal/...
-   go vet . ./internal/...
-   go test -count=1 ./internal/...
-   wails3 build
-   ```
-   Optionally cross-build Windows/macOS/Linux packages via `Taskfile.yml` / `wails3 package`.
+4. **Run validation, tests, build, and generate checksums via `scripts/build.sh`**:
+   - **Local / single-host release build**:
+     ```bash
+     ./scripts/build.sh --version vX.Y.Z-beta
+     ```
+     This validates and tests the frontend (`check`, `test`, `build`) and Go backend (`vet`, `build`, `test -race`), builds the desktop binary, stages `bin/dist/wailsail-vX.Y.Z-beta-<os>-<arch>[.exe]`, and writes + verifies `bin/dist/SHA256SUMS`.
+     Pass `--target linux --target windows` (and optional `--arch amd64`) to build multiple targets on one host.
+   - **GitHub Actions 3-job release flow**:
+     ```bash
+     # Job 1 (test): fail fast on Ubuntu
+     ./scripts/build.sh --test-only
+
+     # Job 2 (build matrix): one job per OS/arch runner
+     ./scripts/build.sh --skip-tests --target <os> --arch <arch> --version vX.Y.Z-beta
+
+     # Job 3 (release): after downloading all matrix artifacts into dist/
+     ./scripts/build.sh --checksums-only --dist-dir dist
+     ```
 5. **Commit & tag**:
    ```bash
    git add frontend/src/lib/store.svelte.ts build/ CHANGELOG.md
    git commit -m "chore(release): bump version to vX.Y.Z-beta"
    git tag -a vX.Y.Z-beta -m "Release vX.Y.Z-beta"
    ```
-6. **Push commit and tag** (when ready to publish):
+6. **Push commit, tag, and publish artifacts**:
    ```bash
    git push origin master --follow-tags
    ```
+   Upload all staged binaries/packages and the combined `SHA256SUMS` file to the GitHub Release.
