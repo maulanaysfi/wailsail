@@ -1,0 +1,229 @@
+name: CI & Release
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version override (optional; defaults to build/config.yml info.version)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: Validate & Test
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.version.outputs.should_release }}
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux desktop headers
+        # Wails v3 Linux CGO packages require GTK4/WebKitGTK headers during go build/test.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev libwebkitgtk-6.0-dev pkg-config
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Validate and test
+        run: ./scripts/build.sh --test-only
+
+      - name: Check release version
+        id: version
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          raw="$INPUT_VERSION"
+          if [[ -z "$raw" ]]; then
+            raw="$(sed -nE 's/^[[:space:]]+version:[[:space:]]*["'\'']?([^"'\''#[:space:]]+)["'\'']?.*/\1/p' build/config.yml | head -n1)"
+          fi
+          ver="${raw#v}"
+          if [[ -z "$ver" ]]; then
+            echo "error: could not determine version from build/config.yml" >&2
+            exit 1
+          fi
+          tag="v${ver}"
+
+          prerelease="false"
+          if [[ "$ver" == *-* ]]; then
+            prerelease="true"
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+            echo "Tag ${tag} already exists on origin; skipping release."
+            should_release="false"
+          else
+            echo "Tag ${tag} does not exist yet; scheduling release."
+            should_release="true"
+          fi
+
+          echo "version=${ver}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "prerelease=${prerelease}" >> "$GITHUB_OUTPUT"
+          echo "should_release=${should_release}" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build (${{ matrix.target }}/${{ matrix.arch }})
+    needs: test
+    if: needs.test.outputs.should_release == 'true'
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: linux
+            arch: amd64
+          - runner: windows-latest
+            target: windows
+            arch: amd64
+          - runner: macos-latest
+            target: darwin
+            arch: arm64
+          - runner: macos-latest
+            target: darwin
+            arch: amd64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux desktop headers
+        if: matrix.target == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev libwebkitgtk-6.0-dev pkg-config
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Wails v3 CLI
+        shell: bash
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0
+
+      - name: Build binary
+        shell: bash
+        env:
+          TARGET_OS: ${{ matrix.target }}
+          TARGET_ARCH: ${{ matrix.arch }}
+          RELEASE_TAG: ${{ needs.test.outputs.tag }}
+        run: |
+          ./scripts/build.sh \
+            --skip-tests \
+            --target "$TARGET_OS" \
+            --arch "$TARGET_ARCH" \
+            --version "$RELEASE_TAG" \
+            --dist-dir bin/dist
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wailsail-${{ matrix.target }}-${{ matrix.arch }}
+          path: bin/dist/wailsail-*
+          if-no-files-found: error
+
+  release:
+    name: Release ${{ needs.test.outputs.tag }}
+    needs: [test, build]
+    if: needs.test.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: wailsail-*
+          merge-multiple: true
+
+      - name: Generate and verify combined SHA256SUMS
+        run: ./scripts/build.sh --checksums-only --dist-dir dist
+
+      - name: Extract release notes from CHANGELOG.md
+        id: notes
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.test.outputs.version }}
+        run: |
+          awk -v hdr="## [${RELEASE_VERSION}]" '
+            index($0, hdr) == 1 { in_sec = 1; next }
+            /^## \[/ && in_sec { exit }
+            in_sec { print }
+          ' CHANGELOG.md > release-notes.md
+
+          if [[ -s release-notes.md ]]; then
+            echo "has_notes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_notes=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.test.outputs.tag }}
+          TARGET_SHA: ${{ github.sha }}
+          IS_PRERELEASE: ${{ needs.test.outputs.prerelease }}
+          HAS_NOTES: ${{ steps.notes.outputs.has_notes }}
+        shell: bash
+        run: |
+          args=(
+            "$RELEASE_TAG"
+            dist/*
+            --target "$TARGET_SHA"
+            --title "wailsail $RELEASE_TAG"
+          )
+          if [[ "$IS_PRERELEASE" == "true" ]]; then
+            args+=(--prerelease)
+          fi
+          if [[ "$HAS_NOTES" == "true" ]]; then
+            args+=(--notes-file release-notes.md)
+          else
+            args+=(--generate-notes)
+          fi
+          gh release create "${args[@]}"

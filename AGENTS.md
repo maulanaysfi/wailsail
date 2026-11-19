@@ -46,8 +46,7 @@
 │       └── components/     # TopBar, Sidebar, ResourceTable, DetailDrawer, BottomDock, LogViewer, TerminalView, modals
 ├── build/                  # Wails v3 config.yml, icons, desktop/installer packaging templates
 ├── scripts/                # Build, test, validation, and SHA256SUMS release script (build.sh)
-├── bin/                    # Compiled binaries and staged dist artifacts (gitignored)
-└── logs/                   # Runtime logs directory (gitignored)
+└── bin/                    # Compiled binaries and staged dist artifacts (gitignored)
 ```
 
 ---
