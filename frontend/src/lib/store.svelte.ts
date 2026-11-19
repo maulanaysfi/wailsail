@@ -48,7 +48,7 @@ const defaultSettings: SettingsData = {
 };
 
 export const scaleOptions = [50, 75, 100, 125, 150] as const;
-export const APP_VERSION = "v0.1.1 (beta)";
+export const APP_VERSION = "v0.1.2 (beta)";
 
 class AppState {
   contexts = $state<ContextInfo[]>([]);

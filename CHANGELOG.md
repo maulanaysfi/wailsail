@@ -4,6 +4,27 @@ All notable changes to **`wailsail`** are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.2-beta] - 2026-11-19
+
+### Added
+- **Neat YAML Mode & YAML Copy in DetailDrawer**:
+  - Added `ObjectToNeatYAML` / `NeatObject` in `internal/kube` and `neatYaml` on `ObjectDetail` to strip server-managed state, runtime fields, and defaulted Kubernetes values (`status`, `managedFields`, `uid`, `resourceVersion`, `creationTimestamp`, `last-applied-configuration`, auto-mounted service account token volumes, and Pod/Service/Deployment defaults).
+  - Added a session-scoped **Neat** checkbox (default off) and a **Copy** button in the `DetailDrawer` YAML toolbar (copies neated YAML when Neat is enabled, or raw YAML otherwise).
+- **Quick Copy Buttons & Expandable Long Values**:
+  - Added inline copy icon buttons on the left of key `Metadata`, `Specification & status`, and container image values in `DetailDrawer`.
+  - Truncated label and annotation values longer than 100 characters with a clickable ellipsis (`…`) to expand and collapse inline.
+- **Resizable & Abbreviated Resource Sidebar**:
+  - Abbreviated well-known long resource kinds in the sidebar (`CRD`, `PVC`, `PDB`, `HPA`, `VPA`, `CSR`).
+  - Made the resource sidebar horizontally resizable via its right border up to the width required to display the longest resource name in full.
+
+### Changed
+- **Text Selection Rules**: Disabled text selection globally across the UI while keeping inputs, textareas, and `DetailDrawer` values selectable (and `DetailDrawer` keys non-selectable).
+- **Container Resource Usage Boxes in DetailDrawer**: Wrapped each container's CPU and memory meters in a center-aligned outlined container matching the drawer background (`--border` outline) with the usage text positioned underneath the progress bar for consistent alignment across multi-container pods.
+- **Release Metadata**: Bumped application version placeholders and release tag to `v0.1.2-beta` (`v0.1.2 (beta)` in Settings).
+
+### Fixed
+- **Pod Table Usage Text Overlap**: Measured rendered Google Sans Flex usage text widths in pixels (`measureTextWidth`) so values such as `250m` never overlap the adjacent CPU/Memory usage progress bar.
+
 ## [0.1.1-beta] - 2026-11-17
 
 ### Added
