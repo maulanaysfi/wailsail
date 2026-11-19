@@ -1,7 +1,14 @@
 <script lang="ts">
   import { Kube, errorMessage, type ContainerMetrics, type EventInfo } from "../lib/api";
   import { app, cssZoom, refOf, type Selection } from "../lib/store.svelte";
-  import { age, buildResourceMeter, toneFor, type ResourceMeter } from "../lib/format";
+  import {
+    age,
+    buildConfigDataEntries,
+    buildResourceMeter,
+    SECRET_VALUE_MASK,
+    toneFor,
+    type ResourceMeter,
+  } from "../lib/format";
   import { kindKey, restartableKinds, scalableKinds } from "../lib/resources";
 
   let { sel }: { sel: Selection } = $props();
@@ -20,6 +27,8 @@
   let error = $state("");
   let width = $state(600);
   let expandedMeta = $state<Record<string, boolean>>({});
+  let revealedKeys = $state<Record<string, boolean>>({});
+  let revealedVals = $state<Record<string, boolean>>({});
   let copiedId = $state("");
 
   const kk = $derived(kindKey(sel.type));
@@ -56,6 +65,8 @@
     sel.type;
     editing = false;
     expandedMeta = {};
+    revealedKeys = {};
+    revealedVals = {};
     load();
   });
 
@@ -79,7 +90,7 @@
   });
 
   async function copyValue(value: string, id: string, label = "value") {
-    if (!value) return;
+    if (value == null) return;
     try {
       await navigator.clipboard.writeText(value);
       copiedId = id;
@@ -280,7 +291,7 @@
           spec.ports
             .map((p: any) => `${p.name ? p.name + ":" : ""}${p.port}${p.nodePort ? ":" + p.nodePort : ""} -> ${p.targetPort ?? p.port}/${p.protocol ?? "TCP"}`)
             .join(", "),
-          { mono: true, copy: true },
+          { mono: true },
         );
       }
     } else if (kind === "Ingress") {
@@ -337,8 +348,6 @@
     } else if (kind === "ConfigMap" || kind === "Secret") {
       add("Type", obj.type, { mono: true });
       if (obj.immutable !== undefined) add("Immutable", String(obj.immutable));
-      const dataKeys = [...Object.keys(obj.data ?? {}), ...Object.keys(obj.binaryData ?? {})];
-      add("Data keys", dataKeys.length ? dataKeys.join(", ") : "None", { mono: true });
     } else {
       for (const [sectionName, sectionObj] of [
         ["spec", spec],
@@ -357,6 +366,24 @@
 
     return out;
   });
+
+  const isConfigResource = $derived(sel.type.kind === "ConfigMap" || sel.type.kind === "Secret");
+  const isSecret = $derived(sel.type.kind === "Secret");
+  const configEntries = $derived.by(() => (isConfigResource ? buildConfigDataEntries(obj, isSecret) : []));
+  const serviceFqdn = $derived.by(() => {
+    if (!obj || sel.type.kind !== "Service") return "";
+    const name = metadata.name ?? sel.name;
+    const ns = metadata.namespace ?? sel.namespace;
+    return name && ns ? `${name}.${ns}` : "";
+  });
+
+  function toggleRevealKey(id: string) {
+    revealedKeys[id] = !revealedKeys[id];
+  }
+
+  function toggleRevealVal(id: string) {
+    revealedVals[id] = !revealedVals[id];
+  }
 
   const selectorEntries = $derived.by<[string, string][]>(() => {
     const selMap = spec.selector?.matchLabels ?? (typeof spec.selector === "object" && !Array.isArray(spec.selector) ? spec.selector : null);
@@ -451,6 +478,48 @@
       </svg>
     {/if}
   </button>
+{/snippet}
+
+{#snippet eyeBtn(revealed: boolean, onToggle: () => void, targetLabel: string)}
+  <button
+    class="eye-btn"
+    class:revealed
+    onclick={(e) => {
+      e.stopPropagation();
+      onToggle();
+    }}
+    title={revealed ? `Hide ${targetLabel}` : `Reveal ${targetLabel}`}
+    aria-label={revealed ? `Hide ${targetLabel}` : `Reveal ${targetLabel}`}
+  >
+    {#if revealed}
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+        <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+        <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+        <line x1="1" y1="1" x2="23" y2="23" />
+      </svg>
+    {:else}
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+        <circle cx="12" cy="12" r="3" />
+      </svg>
+    {/if}
+  </button>
+{/snippet}
+
+{#snippet truncText(text: string, expandKey: string, preWrap = false)}
+  {@const long = text.length > 100}
+  {@const open = !!expandedMeta[expandKey]}
+  <span class="mono val-text" class:pre-val={preWrap}>
+    {long && !open ? text.slice(0, 100) : text}{#if long}<button
+        class="ellipsis-btn"
+        onclick={(e) => {
+          e.stopPropagation();
+          toggleExpand(expandKey);
+        }}
+        title={open ? "Collapse value" : "Expand full value"}
+      >{open ? " (less)" : "…"}</button>{/if}
+  </span>
 {/snippet}
 
 {#snippet resourceBox(meter: ResourceMeter)}
@@ -710,7 +779,7 @@
           </dl>
         </section>
 
-        {#if specRows.length > 0 || selectorEntries.length > 0}
+        {#if specRows.length > 0 || selectorEntries.length > 0 || serviceFqdn}
           <section class="section">
             <h4>Specification &amp; status</h4>
             <dl class="kv-grid">
@@ -733,7 +802,85 @@
                   {/each}
                 </dd>
               {/if}
+              {#if serviceFqdn}
+                <dt>Cluster FQDN</dt>
+                <dd class="val-copy">
+                  {@render copyBtn(serviceFqdn, "spec:Cluster FQDN", "Cluster FQDN")}
+                  <span class="mono val-text">{serviceFqdn}</span>
+                </dd>
+              {/if}
             </dl>
+          </section>
+        {/if}
+
+        {#if isConfigResource}
+          <section class="section">
+            <h4>Data ({configEntries.length})</h4>
+            {#if configEntries.length === 0}
+              <p class="muted empty-inline">No data entries.</p>
+            {:else}
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th class="data-key-col">Key</th>
+                    <th>Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each configEntries as entry (entry.id)}
+                    {@const keyOpen = !isSecret || !!revealedKeys[entry.id]}
+                    {@const valOpen = !isSecret || !!revealedVals[entry.id]}
+                    <tr>
+                      <td class="data-key-col">
+                        <div class="val-copy">
+                          {#if isSecret}
+                            {@render eyeBtn(
+                              !!revealedKeys[entry.id],
+                              () => toggleRevealKey(entry.id),
+                              "secret key",
+                            )}
+                          {/if}
+                          <span class={`mono ${keyOpen ? "val-text" : "muted"}`}>
+                            {keyOpen ? entry.key : entry.maskedKey}
+                          </span>
+                          {#if entry.source === "binaryData"}
+                            <span class="pill">binary</span>
+                          {/if}
+                        </div>
+                      </td>
+                      <td class="data-val-col">
+                        <div class="val-copy">
+                          {#if isSecret}
+                            {@render eyeBtn(
+                              !!revealedVals[entry.id],
+                              () => toggleRevealVal(entry.id),
+                              `value for ${keyOpen ? entry.key : entry.maskedKey}`,
+                            )}
+                          {/if}
+                          {@render copyBtn(
+                            entry.value,
+                            `data:${entry.id}`,
+                            isSecret && !keyOpen ? "secret value" : `value for ${entry.key}`,
+                          )}
+                          {#if !valOpen}
+                            <span class="mono muted">{SECRET_VALUE_MASK}</span>
+                          {:else}
+                            {#if entry.binary && isSecret}
+                              <span class="pill">binary</span>
+                            {/if}
+                            {#if entry.value === ""}
+                              <span class="muted">(empty)</span>
+                            {:else}
+                              {@render truncText(entry.value, `data:${entry.id}`, true)}
+                            {/if}
+                          {/if}
+                        </div>
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            {/if}
           </section>
         {/if}
 
@@ -912,7 +1059,8 @@
     gap: var(--space-1);
     min-width: 0;
   }
-  .copy-btn {
+  .copy-btn,
+  .eye-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -927,14 +1075,25 @@
     color: var(--muted);
     align-self: center;
   }
-  .copy-btn:hover:not(:disabled) {
+  .copy-btn:hover:not(:disabled),
+  .eye-btn:hover:not(:disabled) {
     color: var(--text-strong);
     background: var(--hover);
+  }
+  .copy-btn:focus-visible,
+  .eye-btn:focus-visible,
+  .ellipsis-btn:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: 1px;
   }
   .copy-btn.copied {
     color: var(--ok);
   }
-  .copy-btn svg {
+  .eye-btn.revealed {
+    color: var(--accent);
+  }
+  .copy-btn svg,
+  .eye-btn svg {
     width: 12px;
     height: 12px;
   }
@@ -1219,6 +1378,43 @@
   }
   .ledger-table tbody tr:last-child td {
     border-bottom: 0;
+  }
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    table-layout: fixed;
+  }
+  .data-table th,
+  .data-table td {
+    text-align: left;
+    padding: var(--space-1) var(--space-3) var(--space-1) 0;
+    vertical-align: top;
+  }
+  .data-table th {
+    padding-top: 0;
+    color: var(--muted);
+    font-weight: 500;
+  }
+  .data-table td.data-key-col {
+    width: 36%;
+    word-break: break-word;
+  }
+  .data-table td.data-val-col {
+    padding-right: 0;
+    word-break: break-all;
+  }
+  .data-table .copy-btn,
+  .data-table .eye-btn {
+    align-self: flex-start;
+  }
+  .data-table .val-copy > span:last-child {
+    flex: 1;
+    min-width: 0;
+  }
+  .pre-val {
+    white-space: pre-wrap;
+    word-break: break-all;
   }
   .events-table .col-reason {
     width: 128px;

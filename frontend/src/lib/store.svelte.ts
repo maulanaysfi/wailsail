@@ -19,8 +19,8 @@ export interface Selection {
 export type DockStatus = "connecting" | "connected" | "disconnected";
 
 export type DockTab =
-  | { id: string; kind: "logs"; title: string; context: string; namespace: string; pod: string; container?: string; status?: DockStatus }
-  | { id: string; kind: "shell"; title: string; context: string; namespace: string; pod: string; container?: string; status?: DockStatus };
+  | { id: string; kind: "logs"; title: string; context: string; namespace: string; pod: string; container?: string }
+  | { id: string; kind: "shell"; title: string; context: string; namespace: string; pod: string; container?: string };
 
 export interface Toast {
   id: number;
@@ -65,6 +65,7 @@ class AppState {
   current = $state<ResourceType | null>(null);
   selection = $state<Selection | null>(null);
   dock = $state<DockTab[]>([]);
+  dockStatuses = $state<Record<string, DockStatus>>({});
   activeDock = $state("");
   dockOpen = $state(false);
   settings = $state<SettingsData>({ ...defaultSettings });
@@ -372,18 +373,24 @@ class AppState {
       return;
     }
     const id = `${tab.kind}-${Date.now().toString(36)}`;
-    this.dock = [...this.dock, { status: "connecting", ...tab, id } as DockTab];
+    // Keep connection status outside dock tab items so updating status never
+    // replaces the keyed item object and restarts LogViewer/TerminalView effects.
+    this.dockStatuses[id] = "connecting";
+    this.dock = [...this.dock, { ...tab, id } as DockTab];
     this.activeDock = id;
     this.dockOpen = true;
   }
 
   setDockStatus(id: string, status: DockStatus) {
-    this.dock = this.dock.map((t) => (t.id === id && t.status !== status ? { ...t, status } : t));
+    if (this.dockStatuses[id] !== status) {
+      this.dockStatuses[id] = status;
+    }
   }
 
   closeDock(id: string) {
     const idx = this.dock.findIndex((t) => t.id === id);
     this.dock = this.dock.filter((t) => t.id !== id);
+    delete this.dockStatuses[id];
     if (this.activeDock === id) {
       this.activeDock = this.dock[Math.max(0, idx - 1)]?.id ?? "";
     }
@@ -392,6 +399,7 @@ class AppState {
 
   closeAllDock() {
     this.dock = [];
+    this.dockStatuses = {};
     this.activeDock = "";
     this.dockOpen = false;
   }

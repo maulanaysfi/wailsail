@@ -34,9 +34,17 @@
 <section class="dock" class:minimized={!app.dockOpen} style={`height:${height}px`}>
   <div class="resizer" onpointerdown={startResize} role="separator" aria-orientation="horizontal"></div>
   <header class="dock-bar">
-    <div class="tab-strip">
+    <div
+      class="tab-strip"
+      onwheel={(e) => {
+        if (e.deltaY && !e.deltaX && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) {
+          e.currentTarget.scrollLeft += e.deltaY;
+          e.preventDefault();
+        }
+      }}
+    >
       {#each app.dock as t (t.id)}
-        {@const status = t.status ?? "connecting"}
+        {@const status = app.dockStatuses[t.id] ?? "connecting"}
         <div class="tab" class:active={app.activeDock === t.id}>
           <button
             class="label"
@@ -130,7 +138,10 @@
     flex: 1;
     min-width: 0;
     overflow-x: auto;
-    scrollbar-width: thin;
+    scrollbar-width: none;
+  }
+  .tab-strip::-webkit-scrollbar {
+    display: none;
   }
   .tab {
     display: inline-flex;

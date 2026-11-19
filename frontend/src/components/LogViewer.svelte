@@ -106,6 +106,14 @@
     return q ? lines.filter((l) => l.toLowerCase().includes(q)) : lines;
   });
 
+  const K8S_TS_RE = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))(\s+)(.*)$/;
+
+  function splitLogLine(line: string): [string, string] {
+    if (!timestamps) return ["", line];
+    const m = K8S_TS_RE.exec(line);
+    return m ? [m[1] + m[2], m[3]] : ["", line];
+  }
+
   function onScroll() {
     if (!scroller) return;
     stickBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 24;
@@ -163,7 +171,8 @@
 
   <div class="out" bind:this={scroller} onscroll={onScroll}>
     {#each visible as line, i (i)}
-      <div class="line">{line}</div>
+      {@const [ts, body] = splitLogLine(line)}
+      <div class="line">{#if ts}<span class="ts">{ts}</span>{/if}{body}</div>
     {/each}
   </div>
 </div>
@@ -204,6 +213,14 @@
     background: var(--code-bg);
     white-space: pre-wrap;
     word-break: break-all;
+    user-select: text;
+    -webkit-user-select: text;
+  }
+  .ts {
+    color: var(--accent);
+    font-weight: 500;
+    user-select: none;
+    -webkit-user-select: none;
   }
   .line:hover {
     background: var(--hover);

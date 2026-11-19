@@ -216,3 +216,85 @@ export function measureTextWidth(text: string, font: string): number {
   }
   return text.length * 8;
 }
+
+export const SECRET_VALUE_MASK = "*".repeat(20);
+
+/** Mask a Secret key, keeping at most the first 4 characters and asterisks for the rest. */
+export function maskSecretKey(key: string): string {
+  if (key.length <= 4) return "****";
+  return key.slice(0, 4) + "*".repeat(key.length - 4);
+}
+
+/** Decode base64 Secret data as UTF-8 text, falling back to raw base64 for binary content. */
+export function decodeBase64Text(b64: string): { text: string; binary: boolean } {
+  if (!b64) return { text: "", binary: false };
+  try {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    if (/[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(text)) return { text: b64, binary: true };
+    return { text, binary: false };
+  } catch {
+    return { text: b64, binary: true };
+  }
+}
+
+export interface ConfigDataEntry {
+  id: string;
+  key: string;
+  maskedKey: string;
+  value: string;
+  binary: boolean;
+  source: "data" | "stringData" | "binaryData";
+}
+
+/** Collect ConfigMap or Secret key/value pairs in deterministic key order. */
+export function buildConfigDataEntries(obj: Record<string, any> | null, isSecret: boolean): ConfigDataEntry[] {
+  if (!obj) return [];
+  const out: ConfigDataEntry[] = [];
+  const data = isPlainObject(obj.data) ? obj.data : {};
+  for (const key of Object.keys(data).sort()) {
+    const raw = data[key] == null ? "" : String(data[key]);
+    const decoded = isSecret ? decodeBase64Text(raw) : { text: raw, binary: false };
+    out.push({
+      id: `data:${key}`,
+      key,
+      maskedKey: maskSecretKey(key),
+      value: decoded.text,
+      binary: decoded.binary,
+      source: "data",
+    });
+  }
+  if (isSecret && isPlainObject(obj.stringData)) {
+    for (const key of Object.keys(obj.stringData).sort()) {
+      const text = obj.stringData[key] == null ? "" : String(obj.stringData[key]);
+      out.push({
+        id: `stringData:${key}`,
+        key,
+        maskedKey: maskSecretKey(key),
+        value: text,
+        binary: false,
+        source: "stringData",
+      });
+    }
+  }
+  if (!isSecret && isPlainObject(obj.binaryData)) {
+    for (const key of Object.keys(obj.binaryData).sort()) {
+      const text = obj.binaryData[key] == null ? "" : String(obj.binaryData[key]);
+      out.push({
+        id: `binaryData:${key}`,
+        key,
+        maskedKey: maskSecretKey(key),
+        value: text,
+        binary: true,
+        source: "binaryData",
+      });
+    }
+  }
+  return out;
+}
+
+export function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}

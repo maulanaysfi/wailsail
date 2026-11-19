@@ -9,13 +9,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 - **Dock Tab Icons, Status Colors & Close All**:
   - Replaced text badges in `BottomDock` tabs with Logs and Shell SVG icons colored by live session status (`green` = connected, `yellow` = connecting/reconnecting, `red` = disconnected via `connected` events on `logs.Event` and `exec.Event`).
-  - Made the dock tab strip horizontally scrollable when many tabs are open and added a **Close all** button (with confirmation prompt) next to the hide dock button.
+  - Made the dock tab strip horizontally scrollable when many tabs are open (with hidden scrollbar and overflow mouse-wheel scrolling) and added a **Close all** button (with confirmation prompt) next to the hide dock button.
+- **Minimalist Scrollbars**: Added lightweight `6px` custom scrollbars across the app while hiding the scrollbar on the `BottomDock` tab strip.
+- **ConfigMap & Secret Data Viewer in DetailDrawer**:
+  - Added a borderless paired `Data` table for `ConfigMap` and `Secret` resources showing keys and values side by side, truncating values longer than 100 characters with expand/collapse toggles and placing copy buttons before each value.
+  - Masked `Secret` keys after the first 4 characters (`****` for `<= 4` chars) with an eye toggle before each key, and masked `Secret` values with a constant 20-asterisk placeholder alongside eye and copy buttons before each value (base64-decoding UTF-8 text on reveal and copy, with base64 fallback for binary data).
+- **Log Text Selection & High-Contrast Timestamps**: Made container log text in `LogViewer` selectable while coloring Kubernetes timestamps in high contrast (`--accent`) and keeping timestamps non-selectable.
+- **Service Cluster FQDN in DetailDrawer**: Added a copyable `Cluster FQDN` (`<name>.<namespace>`) on the last line of `Service` `Specification & status` and removed the copy button from `Ports`.
 
 ### Changed
 - **Bottom-Right Dock Button**: Moved the **Dock** toggle button out of `TopBar` into a bottom bar anchored at the bottom-right corner.
 - **YAML Edit Escape Behavior**: Pressing `Esc` (or clicking `Cancel`) while editing YAML in `DetailDrawer` now discards edits without a confirmation prompt and exits edit mode without closing the drawer.
 
 ### Fixed
+- **Dock Logs & Shell Reconnect Loop**: Kept dock tab connection statuses in a separate `dockStatuses` map outside `app.dock` tab objects so status transitions no longer replace keyed tab items and restart `LogViewer` / `TerminalView` streams.
 - **DetailDrawer Container Image Truncation**: Truncated long container image names/tags with ellipsis so they no longer expand `DetailDrawer` width or cause horizontal scrolling.
 
 ## [0.1.2-beta] - 2026-11-19
