@@ -18,7 +18,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Made the resource sidebar horizontally resizable via its right border up to the width required to display the longest resource name in full.
 
 ### Changed
-- **Text Selection Rules**: Disabled text selection globally across the UI while keeping inputs, textareas, and `DetailDrawer` value fields (plus both keys and values on Labels) selectable.
+- **Release Guide**: Added [RELEASE.md](RELEASE.md) documenting all application version placeholders and step-by-step release instructions.
+- **Text Selection Rules**: Disabled text selection globally across the UI while keeping inputs, textareas, and `DetailDrawer` value fields (plus both keys and values on Labels, Annotations, and Selectors) selectable.
 - **Container Resource Usage Boxes in DetailDrawer**: Wrapped each container's CPU and memory meters in a center-aligned outlined container matching the drawer background (`--border` outline) with the metric name and usage text placed side-by-side underneath the progress bar for consistent alignment across multi-container pods.
 - **Release Metadata**: Bumped application version placeholders and release tag to `v0.1.2-beta` (`v0.1.2 (beta)` in Settings).
 

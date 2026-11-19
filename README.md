@@ -118,3 +118,9 @@ npm run build
 - `Esc` — Close open confirmation dialogs, modals, or the detail drawer
 - `Ctrl/Cmd + S` — Apply edits while editing resource YAML in the detail drawer
 - `Tab` — Insert 2 spaces while editing resource YAML
+
+---
+
+## Releasing
+
+See [RELEASE.md](RELEASE.md) for the full list of version placeholders and release checklist.

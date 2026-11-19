@@ -14,7 +14,7 @@
   - Exec TTY sessions: `wailsail:exec:<id>`
   - Port-forward list updates: `wailsail:portforwards`
 - **Icons & build metadata.** Keep root `icon.png` as the canonical source icon; sync changes to `build/appicon.png`, `build/ios/icon.png`, and `frontend/public/icon.png`, and regenerate platform icons via `wails3 task common:generate:icons`.
-- **Verification.** Keep `go build ./...`, `go vet ./...`, `go test ./...`, `npm run check`, and `npm run build` in `frontend/` green.
+- **Verification.** Keep `go build ./...`, `go vet ./...`, `go test ./...`, `npm run check`, and `npm run build` in `frontend/` green. Let visual inspection performed manually by dev/user.
 
 ---
 
@@ -24,6 +24,7 @@
 ├── AGENTS.md               # Project rules, architecture, and service contracts
 ├── CHANGELOG.md            # Release history and notable changes
 ├── README.md               # User-facing documentation
+├── RELEASE.md              # Versioning placeholders and release checklist
 ├── Taskfile.yml            # Wails v3 root build/dev/package task runner
 ├── go.mod / go.sum         # Go module `wailsail`
 ├── icon.png                # Canonical app icon (embedded in main.go & frontend)
@@ -115,7 +116,7 @@ flowchart LR
 - Spacing follows an 8-point grid using `--space-1`..`--space-6` (4/8/16/24/32/40px) from `frontend/public/style.css`.
 - Resource table shows wide columns by default with static (`table-layout: fixed`), draggable (reorderable), and resizable columns; cell text is single-line clipped (`text-overflow: clip`).
 - Container resource meters use rounded tracks (`--track`) with a vertical request marker (white `--mark-request` at `request/limit`, or yellow `--warn` at `25%` when no limit is set), threshold bar colors (`<80%` green, `80%–94.99%` yellow, `>=95%` red), and plain-text fallback when neither request nor limit is defined; in `DetailDrawer`, each meter sits in a centered `--border` box with text below the bar.
-- Text selection is disabled globally (`user-select: none`) except inside form inputs/textareas, `DetailDrawer` value fields, and `DetailDrawer` labels (both keys and values).
+- Text selection is disabled globally (`user-select: none`) except inside form inputs/textareas, `DetailDrawer` value fields, and `DetailDrawer` labels, annotations, and selectors (both keys and values).
 - Hover tooltips (`title`) are used only on clickable `<button>` elements (describing the button's action) and container resource progress bars (`Used / Request / Limit`).
 
 ---
