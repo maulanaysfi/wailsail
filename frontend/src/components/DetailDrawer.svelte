@@ -448,7 +448,6 @@
 
 {#snippet resourceBox(meter: ResourceMeter)}
   <div class="meter-box">
-    <span class="meter-label">{meter.label}</span>
     {#if meter.showBar}
       <div class="meter-track" title={meter.hoverText}>
         <div class={`meter-fill tone-bg-${meter.tone}`} style={`width:${meter.usedPct}%`}></div>
@@ -456,9 +455,15 @@
           <span class="meter-req-mark" class:warn={meter.requestMarkWarn} style={`left:${meter.requestMarkPct}%`}></span>
         {/if}
       </div>
-      <span class="meter-val">{meter.usedText} / {meter.limitText !== "none" ? meter.limitText : meter.scaleMaxText}</span>
+      <div class="meter-caption">
+        <span class="meter-label">{meter.label}</span>
+        <span class="meter-val">{meter.usedText} / {meter.limitText !== "none" ? meter.limitText : meter.scaleMaxText}</span>
+      </div>
     {:else}
-      <span class="meter-plain">{meter.usedText}</span>
+      <div class="meter-caption">
+        <span class="meter-label">{meter.label}</span>
+        <span class="meter-plain">{meter.usedText}</span>
+      </div>
     {/if}
   </div>
 {/snippet}
@@ -647,9 +652,9 @@
                     {@const ek = `lbl:${k}`}
                     {@const long = v.length > 100}
                     {@const open = !!expandedMeta[ek]}
-                    <span class="chip mono" class:expanded={open}>
-                      <span class="chip-k">{k}=</span><span
-                        class="chip-v val-text"
+                    <span class="chip mono val-text" class:expanded={open}>
+                      <span>{k}=</span><span
+                        class="chip-v"
                         class:expandable={long}
                         role={long ? "button" : undefined}
                         onclick={long ? () => toggleExpand(ek) : undefined}
@@ -1126,6 +1131,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     gap: var(--space-1);
     padding: var(--space-2);
     background: transparent;
@@ -1136,6 +1142,13 @@
   }
   .meter-box .meter-track {
     width: 100%;
+  }
+  .meter-caption {
+    display: inline-flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: var(--space-1);
+    flex-wrap: wrap;
   }
   .meter-label {
     font-size: 11px;

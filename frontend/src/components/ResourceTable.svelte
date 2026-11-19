@@ -37,6 +37,15 @@
   let dropTargetKey = $state("");
   let dropAfter = $state(false);
   let headerRowEl: HTMLTableRowElement | undefined = $state();
+  let fontGen = $state(0);
+
+  $effect(() => {
+    if (typeof document !== "undefined" && document.fonts?.ready) {
+      document.fonts.ready.then(() => {
+        fontGen++;
+      });
+    }
+  });
 
   const allNamespaces = $derived(!!app.current?.namespaced && app.namespace === "");
   const curKindKey = $derived(app.current ? kindKey(app.current) : "");
@@ -128,15 +137,18 @@
   const maxMeterPx = $derived.by<{ cpu: number; memory: number }>(() => {
     version;
     podMetrics;
-    if (!isPod) return { cpu: 28, memory: 28 };
-    const font = '12px "Google Sans Flex", sans-serif';
-    let cpu = 24;
-    let memory = 24;
+    fontGen;
+    if (!isPod) return { cpu: 36, memory: 36 };
+    const font = '12px "Google Sans Flex", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    let cpu = 28;
+    let memory = 28;
     for (const r of rows.values()) {
-      cpu = Math.max(cpu, measureTextWidth(podMeterFor(r, "cpu").usedText, font));
-      memory = Math.max(memory, measureTextWidth(podMeterFor(r, "memory").usedText, font));
+      const ct = podMeterFor(r, "cpu").usedText;
+      const mt = podMeterFor(r, "memory").usedText;
+      cpu = Math.max(cpu, measureTextWidth(ct, font), Math.ceil(ct.length * 8));
+      memory = Math.max(memory, measureTextWidth(mt, font), Math.ceil(mt.length * 8));
     }
-    return { cpu: cpu + 4, memory: memory + 4 };
+    return { cpu: cpu + 6, memory: memory + 6 };
   });
 
   interface DisplayCol {
@@ -653,9 +665,9 @@
   }
   .cell-meter {
     display: grid;
-    grid-template-columns: var(--text-w, 32px) minmax(48px, 1fr);
+    grid-template-columns: var(--text-w, 36px) minmax(48px, 1fr);
     align-items: center;
-    gap: var(--space-1);
+    gap: 2px;
   }
   .cell-meter-text,
   .cell-meter-plain {

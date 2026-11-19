@@ -18,12 +18,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Made the resource sidebar horizontally resizable via its right border up to the width required to display the longest resource name in full.
 
 ### Changed
-- **Text Selection Rules**: Disabled text selection globally across the UI while keeping inputs, textareas, and `DetailDrawer` values selectable (and `DetailDrawer` keys non-selectable).
-- **Container Resource Usage Boxes in DetailDrawer**: Wrapped each container's CPU and memory meters in a center-aligned outlined container matching the drawer background (`--border` outline) with the usage text positioned underneath the progress bar for consistent alignment across multi-container pods.
+- **Text Selection Rules**: Disabled text selection globally across the UI while keeping inputs, textareas, and `DetailDrawer` value fields (plus both keys and values on Labels) selectable.
+- **Container Resource Usage Boxes in DetailDrawer**: Wrapped each container's CPU and memory meters in a center-aligned outlined container matching the drawer background (`--border` outline) with the metric name and usage text placed side-by-side underneath the progress bar for consistent alignment across multi-container pods.
 - **Release Metadata**: Bumped application version placeholders and release tag to `v0.1.2-beta` (`v0.1.2 (beta)` in Settings).
 
 ### Fixed
-- **Pod Table Usage Text Overlap**: Measured rendered Google Sans Flex usage text widths in pixels (`measureTextWidth`) so values such as `250m` never overlap the adjacent CPU/Memory usage progress bar.
+- **Pod Table Usage Text Overlap**: Re-measures rendered Google Sans Flex usage text widths in pixels once fonts load (with character-width floor and a `2px` bar gap) so values such as `250m` never overlap the adjacent CPU/Memory usage progress bar.
 
 ## [0.1.1-beta] - 2026-11-17
 
