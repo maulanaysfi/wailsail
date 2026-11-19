@@ -16,9 +16,11 @@ export interface Selection {
   name: string;
 }
 
+export type DockStatus = "connecting" | "connected" | "disconnected";
+
 export type DockTab =
-  | { id: string; kind: "logs"; title: string; context: string; namespace: string; pod: string; container?: string }
-  | { id: string; kind: "shell"; title: string; context: string; namespace: string; pod: string; container?: string };
+  | { id: string; kind: "logs"; title: string; context: string; namespace: string; pod: string; container?: string; status?: DockStatus }
+  | { id: string; kind: "shell"; title: string; context: string; namespace: string; pod: string; container?: string; status?: DockStatus };
 
 export interface Toast {
   id: number;
@@ -73,6 +75,7 @@ class AppState {
   showSettings = $state(false);
   defaultKubeconfigPath = $state("");
   forwardTarget = $state<Selection | null>(null);
+  cancelYamlEdit: (() => void) | null = null;
   now = $state(Date.now());
 
   #toastSeq = 0;
@@ -369,9 +372,13 @@ class AppState {
       return;
     }
     const id = `${tab.kind}-${Date.now().toString(36)}`;
-    this.dock = [...this.dock, { ...tab, id } as DockTab];
+    this.dock = [...this.dock, { status: "connecting", ...tab, id } as DockTab];
     this.activeDock = id;
     this.dockOpen = true;
+  }
+
+  setDockStatus(id: string, status: DockStatus) {
+    this.dock = this.dock.map((t) => (t.id === id && t.status !== status ? { ...t, status } : t));
   }
 
   closeDock(id: string) {
@@ -381,6 +388,12 @@ class AppState {
       this.activeDock = this.dock[Math.max(0, idx - 1)]?.id ?? "";
     }
     if (this.dock.length === 0) this.dockOpen = false;
+  }
+
+  closeAllDock() {
+    this.dock = [];
+    this.activeDock = "";
+    this.dockOpen = false;
   }
 
   toast(text: string, tone: Toast["tone"] = "info") {

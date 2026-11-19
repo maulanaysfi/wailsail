@@ -59,14 +59,6 @@
     Forwards
   </button>
   <button
-    class="ghost"
-    onclick={() => (app.dockOpen = !app.dockOpen)}
-    disabled={app.dock.length === 0}
-    title={app.dockOpen ? "Minimize bottom dock" : "Show bottom dock"}
-  >
-    Dock{app.dock.length ? ` (${app.dock.length})` : ""}
-  </button>
-  <button
     class="ghost icon"
     onclick={() => app.reload()}
     title="Reload kubeconfig and refresh current resource view"

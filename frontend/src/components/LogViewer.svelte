@@ -1,14 +1,21 @@
 <script lang="ts">
   import { tick, untrack } from "svelte";
   import { Kube, Logs, newStreamId, on, topics, errorMessage, type ContainerInfo, type LogEvent } from "../lib/api";
-  import { app } from "../lib/store.svelte";
+  import { app, type DockStatus } from "../lib/store.svelte";
 
   let {
     context,
     namespace,
     pod,
     initialContainer = "",
-  }: { context: string; namespace: string; pod: string; initialContainer?: string } = $props();
+    onStatus,
+  }: {
+    context: string;
+    namespace: string;
+    pod: string;
+    initialContainer?: string;
+    onStatus?: (s: DockStatus) => void;
+  } = $props();
 
   const MAX_LINES = 10_000;
 
@@ -58,10 +65,13 @@
       lines = [];
       ended = false;
       error = "";
+      onStatus?.("connecting");
     });
     const id = newStreamId();
     const off = on<LogEvent>(topics.logs(id), async (ev) => {
+      if (ev.connected) onStatus?.("connected");
       if (!paused && ev.lines?.length) {
+        onStatus?.("connected");
         const combined = [...lines, ...ev.lines];
         lines = combined.length > MAX_LINES ? combined.slice(combined.length - MAX_LINES) : combined;
         if (stickBottom && scroller) {
@@ -69,13 +79,20 @@
           scroller.scrollTop = scroller.scrollHeight;
         }
       }
-      if (ev.ended) ended = true;
-      if (ev.error) error = ev.error;
+      if (ev.error) {
+        error = ev.error;
+        onStatus?.("disconnected");
+      }
+      if (ev.ended) {
+        ended = true;
+        onStatus?.("disconnected");
+      }
     });
     Logs.Start(ctx, ns, p, { container: c, tailLines: tail, timestamps: ts, previous: prev, follow: flw }, id).catch(
       (e) => {
         error = errorMessage(e);
         ended = true;
+        onStatus?.("disconnected");
       },
     );
     return () => {

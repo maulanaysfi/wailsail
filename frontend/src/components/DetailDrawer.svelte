@@ -65,11 +65,18 @@
     tab = "yaml";
   }
 
-  async function cancelEdit() {
-    if (dirty && !(await app.confirm("Discard changes?", "Your edits to this resource will be lost."))) return;
+  function cancelEdit() {
     editing = false;
     draft = activeYaml;
   }
+
+  $effect(() => {
+    if (!editing) return;
+    app.cancelYamlEdit = cancelEdit;
+    return () => {
+      if (app.cancelYamlEdit === cancelEdit) app.cancelYamlEdit = null;
+    };
+  });
 
   async function copyValue(value: string, id: string, label = "value") {
     if (!value) return;
@@ -755,7 +762,7 @@
                     {#if c.image}
                       {@render copyBtn(c.image, `img:${c.role}:${c.name}`, "image")}
                     {/if}
-                    <span class="mono val-text">{c.image}{c.ports ? ` (${c.ports})` : ""}</span>
+                    <span class="mono val-text img-text">{c.image}{c.ports ? ` (${c.ports})` : ""}</span>
                   </div>
                   <div class="meters">
                     {@render resourceBox(c.cpu)}
@@ -861,7 +868,9 @@
     flex-direction: column;
     border-left: 1px solid var(--border);
     background: var(--panel);
+    min-width: 0;
     min-height: 0;
+    overflow: hidden;
   }
   .resizer {
     position: absolute;
@@ -987,14 +996,17 @@
   .overview {
     flex: 1;
     overflow-y: auto;
+    overflow-x: hidden;
     padding: 0 var(--space-3) var(--space-4);
     display: flex;
     flex-direction: column;
+    min-width: 0;
     min-height: 0;
   }
   .section {
     padding: var(--space-3) 0;
     border-bottom: 1px solid var(--border);
+    min-width: 0;
   }
   .section:last-child {
     border-bottom: 0;
@@ -1099,6 +1111,7 @@
   .container-list {
     display: flex;
     flex-direction: column;
+    min-width: 0;
   }
   .container-row {
     display: flex;
@@ -1106,6 +1119,15 @@
     gap: var(--space-1);
     padding: var(--space-2) 0;
     border-bottom: 1px solid var(--border-soft);
+    min-width: 0;
+    overflow: hidden;
+  }
+  .img-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .container-row:first-child {
     padding-top: 0;

@@ -4,13 +4,21 @@
   import { FitAddon } from "@xterm/addon-fit";
   import "@xterm/xterm/css/xterm.css";
   import { Exec, Kube, newStreamId, on, topics, errorMessage, type ContainerInfo, type ExecEvent } from "../lib/api";
+  import type { DockStatus } from "../lib/store.svelte";
 
   let {
     context,
     namespace,
     pod,
     initialContainer = "",
-  }: { context: string; namespace: string; pod: string; initialContainer?: string } = $props();
+    onStatus,
+  }: {
+    context: string;
+    namespace: string;
+    pod: string;
+    initialContainer?: string;
+    onStatus?: (s: DockStatus) => void;
+  } = $props();
 
   let containers = $state<ContainerInfo[]>([]);
   let container = $state(untrack(() => initialContainer));
@@ -74,6 +82,7 @@
     untrack(() => {
       exited = false;
       error = "";
+      onStatus?.("connecting");
     });
     term.reset();
     fit?.fit();
@@ -81,15 +90,21 @@
     const id = newStreamId();
     activeSession = id;
     const off = on<ExecEvent>(topics.exec(id), (ev) => {
+      if (ev.connected) onStatus?.("connected");
       if (ev.data) {
+        onStatus?.("connected");
         const bin = atob(ev.data);
         const bytes = new Uint8Array(bin.length);
         for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
         term?.write(bytes);
       }
-      if (ev.error) error = ev.error;
+      if (ev.error) {
+        error = ev.error;
+        onStatus?.("disconnected");
+      }
       if (ev.exited) {
         exited = true;
+        onStatus?.("disconnected");
         term?.writeln("\r\n\x1b[90m[session ended]\x1b[0m");
       }
     });
@@ -99,6 +114,7 @@
       .catch((e) => {
         error = errorMessage(e);
         exited = true;
+        onStatus?.("disconnected");
       });
     return () => {
       off();

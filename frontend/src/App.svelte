@@ -22,6 +22,8 @@
       else if (app.showForwards || app.forwardTarget) {
         app.showForwards = false;
         app.forwardTarget = null;
+      } else if (app.cancelYamlEdit) {
+        app.cancelYamlEdit();
       } else if (app.selection) app.selection = null;
     }
   }
@@ -95,6 +97,18 @@
       </div>
     {/each}
   </div>
+
+  <footer class="bottom-bar">
+    <span class="grow"></span>
+    <button
+      class="ghost mini"
+      onclick={() => (app.dockOpen = !app.dockOpen)}
+      disabled={app.dock.length === 0}
+      title={app.dockOpen ? "Minimize bottom dock" : "Show bottom dock"}
+    >
+      Dock{app.dock.length ? ` (${app.dock.length})` : ""}
+    </button>
+  </footer>
 </div>
 
 <style>
@@ -167,5 +181,17 @@
   .toast.error {
     border-color: var(--bad);
     color: var(--bad);
+  }
+  .bottom-bar {
+    display: flex;
+    align-items: center;
+    height: var(--control-h);
+    padding: 0 var(--space-3);
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+    flex-shrink: 0;
+  }
+  .bottom-bar .grow {
+    flex: 1;
   }
 </style>

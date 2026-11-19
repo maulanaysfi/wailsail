@@ -4,6 +4,20 @@ All notable changes to **`wailsail`** are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- **Dock Tab Icons, Status Colors & Close All**:
+  - Replaced text badges in `BottomDock` tabs with Logs and Shell SVG icons colored by live session status (`green` = connected, `yellow` = connecting/reconnecting, `red` = disconnected via `connected` events on `logs.Event` and `exec.Event`).
+  - Made the dock tab strip horizontally scrollable when many tabs are open and added a **Close all** button (with confirmation prompt) next to the hide dock button.
+
+### Changed
+- **Bottom-Right Dock Button**: Moved the **Dock** toggle button out of `TopBar` into a bottom bar anchored at the bottom-right corner.
+- **YAML Edit Escape Behavior**: Pressing `Esc` (or clicking `Cancel`) while editing YAML in `DetailDrawer` now discards edits without a confirmation prompt and exits edit mode without closing the drawer.
+
+### Fixed
+- **DetailDrawer Container Image Truncation**: Truncated long container image names/tags with ellipsis so they no longer expand `DetailDrawer` width or cause horizontal scrolling.
+
 ## [0.1.2-beta] - 2026-11-19
 
 ### Added
