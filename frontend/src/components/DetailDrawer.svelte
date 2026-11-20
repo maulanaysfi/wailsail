@@ -152,7 +152,7 @@
   async function save() {
     saving = true;
     try {
-      await Kube.Apply(app.context, draft, sel.namespace);
+      await Kube.Update(app.context, refOf(sel.type), sel.namespace, sel.name, draft);
       app.toast(`${sel.type.kind} ${sel.name} applied`, "ok");
       editing = false;
       await load();

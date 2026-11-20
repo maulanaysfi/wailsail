@@ -237,7 +237,7 @@ export function buildContainersList(
 }
 
 export interface ControlledPodsPlan {
-  mode: "owner" | "deployment" | "cronjob" | "service" | "node";
+  mode: "owner" | "deployment" | "cronjob" | "service" | "node" | "namespace";
   uid: string;
   namespace: string;
   labelSelector: string;
@@ -298,6 +298,11 @@ export function buildControlledPodsPlan(
       emptyHint: "",
     };
   }
+  if (kindKeyStr === "/Namespace") {
+    return name
+      ? { mode: "namespace", uid, namespace: name, labelSelector: "", fieldSelector: "", emptyHint: "" }
+      : null;
+  }
   return null;
 }
 
@@ -309,7 +314,7 @@ export function filterControlledPods(
 ): Row[] {
   if (!plan || plan.emptyHint) return [];
   let matches: Row[];
-  if (plan.mode === "service" || plan.mode === "node") {
+  if (plan.mode === "service" || plan.mode === "node" || plan.mode === "namespace") {
     matches = [...podRows];
   } else if (plan.mode === "owner") {
     matches = [];

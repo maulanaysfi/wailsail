@@ -130,6 +130,14 @@ export function StopWatch(streamID: string): $CancellablePromise<void> {
 }
 
 /**
+ * Update server-side-applies edits to an existing selected object, rejecting
+ * changes to immutable resource identity fields (kind, API group, name, namespace).
+ */
+export function Update(contextName: string, ref: $models.ResourceRef, $namespace: string, name: string, manifest: string): $CancellablePromise<$models.ApplyResult> {
+    return $Call.ByID(3635064223, contextName, ref, $namespace, name, manifest);
+}
+
+/**
  * Watch starts a live table watch for a resource type and returns the
  * stream ID. Events are published on WatchTopic(id). namespace == ""
  * watches all namespaces. Pass a caller-generated streamID so the frontend

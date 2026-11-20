@@ -320,3 +320,46 @@ func TestListTableWithSelectors(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateUpdateTarget(t *testing.T) {
+	ref := ResourceRef{Group: "apps", Version: "v1", Resource: "deployments", Kind: "Deployment", Namespaced: true}
+	makeObj := func(apiVersion, kind, ns, name string) *unstructured.Unstructured {
+		meta := map[string]any{"name": name}
+		if ns != "" {
+			meta["namespace"] = ns
+		}
+		return &unstructured.Unstructured{Object: map[string]any{
+			"apiVersion": apiVersion,
+			"kind":       kind,
+			"metadata":   meta,
+		}}
+	}
+
+	if err := validateUpdateTarget(makeObj("apps/v1", "Deployment", "prod", "web"), ref, "prod", "web"); err != nil {
+		t.Fatalf("matching target failed: %v", err)
+	}
+	if err := validateUpdateTarget(makeObj("apps/v1", "Deployment", "", "web"), ref, "prod", "web"); err != nil {
+		t.Fatalf("omitted namespace on same object should default cleanly, got: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		obj  *unstructured.Unstructured
+		want string
+	}{
+		{"renamed", makeObj("apps/v1", "Deployment", "prod", "web-2"), "metadata.name"},
+		{"re-namespaced", makeObj("apps/v1", "Deployment", "staging", "web"), "metadata.namespace"},
+		{"wrong kind", makeObj("apps/v1", "StatefulSet", "prod", "web"), "kind"},
+		{"wrong group", makeObj("v1", "Deployment", "prod", "web"), "apiVersion"},
+	} {
+		err := validateUpdateTarget(tc.obj, ref, "prod", "web")
+		if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "field is immutable") {
+			t.Fatalf("%s: expected immutable error mentioning %q, got %v", tc.name, tc.want, err)
+		}
+	}
+
+	nsRef := ResourceRef{Group: "", Version: "v1", Resource: "namespaces", Kind: "Namespace", Namespaced: false}
+	if err := validateUpdateTarget(makeObj("v1", "Namespace", "extra", "prod"), nsRef, "", "prod"); err == nil {
+		t.Fatal("expected cluster-scoped object with namespace to be rejected")
+	}
+}

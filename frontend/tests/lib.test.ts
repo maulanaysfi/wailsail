@@ -198,6 +198,11 @@ test("controlled pods plan and filter support Deployment rollouts, Services, and
   assert.equal(nodePlan?.fieldSelector, "spec.nodeName=worker-1");
   assert.equal(nodePlan?.namespace, "");
 
+  const nsPlan = buildControlledPodsPlan("/Namespace", { metadata: { uid: "ns1", name: "prod" } }, "");
+  assert.equal(nsPlan?.mode, "namespace");
+  assert.equal(nsPlan?.namespace, "prod");
+  assert.deepEqual(filterControlledPods(nsPlan, [p1]).map((r) => r.name), ["web-111-a"]);
+
   assert.deepEqual(
     podSummaryColumns([
       { name: "Name", type: "string", description: "", priority: 0 },
