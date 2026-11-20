@@ -31,6 +31,7 @@ export interface Column {
   priority: number;
 }
 export interface OwnerRef {
+  uid?: string;
   apiVersion: string;
   kind: string;
   name: string;

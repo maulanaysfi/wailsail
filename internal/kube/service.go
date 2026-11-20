@@ -193,6 +193,19 @@ func WatchTopic(id string) string { return "wailsail:watch:" + id }
 // watches all namespaces. Pass a caller-generated streamID so the frontend
 // can subscribe before the first event is emitted.
 func (s *Service) Watch(contextName string, ref ResourceRef, namespace string, streamID string) (string, error) {
+	return s.startWatch(contextName, ref, namespace, watchOptions{}, streamID)
+}
+
+// WatchFiltered starts a live table watch scoped by optional Kubernetes
+// labelSelector and fieldSelector query filters.
+func (s *Service) WatchFiltered(contextName string, ref ResourceRef, namespace, labelSelector, fieldSelector, streamID string) (string, error) {
+	return s.startWatch(contextName, ref, namespace, watchOptions{
+		labelSelector: labelSelector,
+		fieldSelector: fieldSelector,
+	}, streamID)
+}
+
+func (s *Service) startWatch(contextName string, ref ResourceRef, namespace string, opts watchOptions, streamID string) (string, error) {
 	c, err := s.mgr.For(contextName)
 	if err != nil {
 		return "", err
@@ -201,7 +214,7 @@ func (s *Service) Watch(contextName string, ref ResourceRef, namespace string, s
 	topic := WatchTopic(id)
 	go func() {
 		defer done()
-		c.runWatch(ctx, ref, namespace, func(ev WatchEvent) { s.emit(topic, ev) })
+		c.runWatch(ctx, ref, namespace, opts, func(ev WatchEvent) { s.emit(topic, ev) })
 	}()
 	return id, nil
 }

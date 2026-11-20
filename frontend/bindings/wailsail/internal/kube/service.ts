@@ -138,3 +138,11 @@ export function StopWatch(streamID: string): $CancellablePromise<void> {
 export function Watch(contextName: string, ref: $models.ResourceRef, $namespace: string, streamID: string): $CancellablePromise<string> {
     return $Call.ByID(699209013, contextName, ref, $namespace, streamID);
 }
+
+/**
+ * WatchFiltered starts a live table watch scoped by optional Kubernetes
+ * labelSelector and fieldSelector query filters.
+ */
+export function WatchFiltered(contextName: string, ref: $models.ResourceRef, $namespace: string, labelSelector: string, fieldSelector: string, streamID: string): $CancellablePromise<string> {
+    return $Call.ByID(862813510, contextName, ref, $namespace, labelSelector, fieldSelector, streamID);
+}

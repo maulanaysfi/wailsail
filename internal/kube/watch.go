@@ -79,9 +79,23 @@ func (c *Clients) get(ctx context.Context, path string, query url.Values, accept
 	return resp, nil
 }
 
+type watchOptions struct {
+	labelSelector string
+	fieldSelector string
+}
+
+func (o watchOptions) apply(q url.Values) {
+	if o.labelSelector != "" {
+		q.Set("labelSelector", o.labelSelector)
+	}
+	if o.fieldSelector != "" {
+		q.Set("fieldSelector", o.fieldSelector)
+	}
+}
+
 // listTable lists a collection as a server-printed table, following
 // pagination.
-func (c *Clients) listTable(ctx context.Context, ref ResourceRef, namespace string) (*tableResult, error) {
+func (c *Clients) listTable(ctx context.Context, ref ResourceRef, namespace string, opts watchOptions) (*tableResult, error) {
 	var all *tableResult
 	cont := ""
 	for {
@@ -89,6 +103,7 @@ func (c *Clients) listTable(ctx context.Context, ref ResourceRef, namespace stri
 		if ref.Kind == "Pod" {
 			q.Set("includeObject", "Object")
 		}
+		opts.apply(q)
 		if cont != "" {
 			q.Set("continue", cont)
 		}
@@ -209,7 +224,7 @@ const flushInterval = 150 * time.Millisecond
 
 // runWatch lists then watches a collection until ctx is cancelled, relisting
 // when the resourceVersion expires and backing off on errors.
-func (c *Clients) runWatch(ctx context.Context, ref ResourceRef, namespace string, emit func(WatchEvent)) {
+func (c *Clients) runWatch(ctx context.Context, ref ResourceRef, namespace string, opts watchOptions, emit func(WatchEvent)) {
 	b := newBatcher()
 	done := make(chan struct{})
 	go func() {
@@ -246,7 +261,7 @@ func (c *Clients) runWatch(ctx context.Context, ref ResourceRef, namespace strin
 
 	for ctx.Err() == nil {
 		if rv == "" {
-			t, err := c.listTable(ctx, ref, namespace)
+			t, err := c.listTable(ctx, ref, namespace, opts)
 			if err != nil {
 				if ctx.Err() != nil {
 					return
@@ -261,7 +276,7 @@ func (c *Clients) runWatch(ctx context.Context, ref ResourceRef, namespace strin
 			b.doReset(t.Columns, t.Rows)
 			backoff = time.Second
 		}
-		newRV, err := c.watchTable(ctx, ref, namespace, rv, table, b)
+		newRV, err := c.watchTable(ctx, ref, namespace, rv, opts, table, b)
 		if ctx.Err() != nil {
 			return
 		}
@@ -287,7 +302,7 @@ type rawWatchEvent struct {
 
 // watchTable consumes one watch connection. It returns the last observed
 // resourceVersion when the server closes the stream normally.
-func (c *Clients) watchTable(ctx context.Context, ref ResourceRef, namespace, rv string, table *tableResult, b *batcher) (string, error) {
+func (c *Clients) watchTable(ctx context.Context, ref ResourceRef, namespace, rv string, opts watchOptions, table *tableResult, b *batcher) (string, error) {
 	q := url.Values{
 		"watch":               {"1"},
 		"resourceVersion":     {rv},
@@ -297,6 +312,7 @@ func (c *Clients) watchTable(ctx context.Context, ref ResourceRef, namespace, rv
 	if ref.Kind == "Pod" {
 		q.Set("includeObject", "Object")
 	}
+	opts.apply(q)
 	resp, err := c.get(ctx, ref.Path(namespace, ""), q, AcceptTable)
 	if err != nil {
 		return rv, err

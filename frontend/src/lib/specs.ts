@@ -1,4 +1,4 @@
-import type { ContainerMetrics } from "./api";
+import type { Column, ContainerMetrics, Row } from "./api";
 import { buildResourceMeter, toneFor, type ResourceMeter } from "./format.ts";
 
 export interface KV {
@@ -234,4 +234,122 @@ export function buildContainersList(
   for (const c of podSpec.initContainers ?? []) out.push(formatContainer(c, "init"));
   for (const c of podSpec.containers ?? []) out.push(formatContainer(c, "main"));
   return out;
+}
+
+export interface ControlledPodsPlan {
+  mode: "owner" | "deployment" | "cronjob" | "service" | "node";
+  uid: string;
+  namespace: string;
+  labelSelector: string;
+  fieldSelector: string;
+  emptyHint: string;
+}
+
+const directPodOwnerKinds = new Set([
+  "apps/ReplicaSet",
+  "apps/StatefulSet",
+  "apps/DaemonSet",
+  "batch/Job",
+]);
+
+/** Describe how to watch and filter controlled Pods for a selected object, or null if unsupported. */
+export function buildControlledPodsPlan(
+  kindKeyStr: string,
+  obj: Record<string, any> | null,
+  fallbackNamespace: string,
+): ControlledPodsPlan | null {
+  if (!obj) return null;
+  const meta = (obj.metadata ?? {}) as Record<string, any>;
+  const uid = String(meta.uid ?? "");
+  const name = String(meta.name ?? "");
+  const ns = String(meta.namespace ?? fallbackNamespace ?? "");
+
+  if (kindKeyStr === "apps/Deployment") {
+    return uid ? { mode: "deployment", uid, namespace: ns, labelSelector: "", fieldSelector: "", emptyHint: "" } : null;
+  }
+  if (kindKeyStr === "batch/CronJob") {
+    return uid ? { mode: "cronjob", uid, namespace: ns, labelSelector: "", fieldSelector: "", emptyHint: "" } : null;
+  }
+  if (directPodOwnerKinds.has(kindKeyStr)) {
+    return uid ? { mode: "owner", uid, namespace: ns, labelSelector: "", fieldSelector: "", emptyHint: "" } : null;
+  }
+  if (kindKeyStr === "/Service") {
+    const entries = buildSelectorEntries(obj).sort(([a], [b]) => a.localeCompare(b));
+    if (entries.length === 0) {
+      return {
+        mode: "service",
+        uid,
+        namespace: ns,
+        labelSelector: "",
+        fieldSelector: "",
+        emptyHint: "No pod selector configured on this Service.",
+      };
+    }
+    const labelSelector = entries.map(([k, v]) => `${k}=${v}`).join(",");
+    return { mode: "service", uid, namespace: ns, labelSelector, fieldSelector: "", emptyHint: "" };
+  }
+  if (kindKeyStr === "/Node") {
+    return {
+      mode: "node",
+      uid,
+      namespace: "",
+      labelSelector: "",
+      fieldSelector: name ? `spec.nodeName=${name}` : "",
+      emptyHint: "",
+    };
+  }
+  return null;
+}
+
+/** Filter and deterministically sort Pod rows matching a ControlledPodsPlan. */
+export function filterControlledPods(
+  plan: ControlledPodsPlan | null,
+  podRows: Iterable<Row>,
+  childRows: Iterable<Row> = [],
+): Row[] {
+  if (!plan || plan.emptyHint) return [];
+  let matches: Row[];
+  if (plan.mode === "service" || plan.mode === "node") {
+    matches = [...podRows];
+  } else if (plan.mode === "owner") {
+    matches = [];
+    for (const r of podRows) {
+      if (r.owner?.uid === plan.uid) matches.push(r);
+    }
+  } else {
+    // Deployment -> ReplicaSets -> Pods; CronJob -> Jobs -> Pods.
+    // Includes both old and new child controllers so rollout pods stay visible until old pods terminate.
+    const childUids = new Set<string>();
+    for (const c of childRows) {
+      if (c.uid && c.owner?.uid === plan.uid) childUids.add(c.uid);
+    }
+    matches = [];
+    if (childUids.size > 0) {
+      for (const r of podRows) {
+        if (r.owner?.uid && childUids.has(r.owner.uid)) matches.push(r);
+      }
+    }
+  }
+  matches.sort((a, b) => a.name.localeCompare(b.name) || a.namespace.localeCompare(b.namespace));
+  return matches;
+}
+
+export interface PodSummaryColumns {
+  readyIdx: number;
+  statusIdx: number;
+  restartsIdx: number;
+}
+
+/** Locate Ready, Status, and Restarts column indices from a Pod Table header. */
+export function podSummaryColumns(cols: Column[]): PodSummaryColumns {
+  let readyIdx = -1;
+  let statusIdx = -1;
+  let restartsIdx = -1;
+  cols.forEach((c, i) => {
+    const n = c.name.toLowerCase();
+    if (n === "ready" && readyIdx === -1) readyIdx = i;
+    else if ((n === "status" || n === "phase") && statusIdx === -1) statusIdx = i;
+    else if (n === "restarts" && restartsIdx === -1) restartsIdx = i;
+  });
+  return { readyIdx, statusIdx, restartsIdx };
 }

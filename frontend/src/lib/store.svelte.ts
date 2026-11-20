@@ -231,15 +231,15 @@ class AppState {
     this.selection = null;
   }
 
-  jumpToOwner(owner: { apiVersion?: string; kind: string; name: string } | undefined | null, namespace: string) {
-    if (!owner?.kind || !owner?.name) return;
-    const parts = (owner.apiVersion ?? "").split("/");
+  jumpToResource(ref: { apiVersion?: string; kind: string; name: string } | undefined | null, namespace: string) {
+    if (!ref?.kind || !ref?.name) return;
+    const parts = (ref.apiVersion ?? "").split("/");
     const group = parts.length > 1 ? parts[0] : "";
     const target =
-      this.resources.find((r) => r.kind === owner.kind && (!owner.apiVersion || r.group === group)) ??
-      this.resources.find((r) => r.kind === owner.kind);
+      this.resources.find((r) => r.kind === ref.kind && (!ref.apiVersion || r.group === group)) ??
+      this.resources.find((r) => r.kind === ref.kind);
     if (!target) {
-      this.toast(`Owner resource kind ${owner.kind} not found`, "error");
+      this.toast(`Resource kind ${ref.kind} not found`, "error");
       return;
     }
     const ns = target.namespaced ? namespace : "";
@@ -247,7 +247,11 @@ class AppState {
       this.namespace = ns;
     }
     this.current = target;
-    this.selection = { type: target, namespace: ns, name: owner.name };
+    this.selection = { type: target, namespace: ns, name: ref.name };
+  }
+
+  jumpToOwner(owner: { apiVersion?: string; kind: string; name: string } | undefined | null, namespace: string) {
+    this.jumpToResource(owner, namespace);
   }
 
   isPinned(r: ResourceType) {

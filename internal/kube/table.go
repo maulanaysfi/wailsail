@@ -62,6 +62,7 @@ type Column struct {
 
 // OwnerRef identifies the controlling owner of an object, if any.
 type OwnerRef struct {
+	UID        string `json:"uid,omitempty"`
 	APIVersion string `json:"apiVersion"`
 	Kind       string `json:"kind"`
 	Name       string `json:"name"`
@@ -164,7 +165,7 @@ func rowFromMeta(m metav1.ObjectMeta) Row {
 				break
 			}
 		}
-		r.Owner = &OwnerRef{APIVersion: pick.APIVersion, Kind: pick.Kind, Name: pick.Name}
+		r.Owner = &OwnerRef{UID: string(pick.UID), APIVersion: pick.APIVersion, Kind: pick.Kind, Name: pick.Name}
 	}
 	r.Key = r.key()
 	return r

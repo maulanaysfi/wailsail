@@ -1,14 +1,36 @@
 <script lang="ts">
-  import { Kube, errorMessage, type ContainerMetrics, type EventInfo } from "../lib/api";
+  import { untrack } from "svelte";
+  import {
+    Kube,
+    newStreamId,
+    on,
+    topics,
+    errorMessage,
+    type Column,
+    type ContainerMetrics,
+    type EventInfo,
+    type ResourceRef,
+    type Row,
+    type WatchEvent,
+  } from "../lib/api";
   import { app, cssZoom, refOf, type Selection } from "../lib/store.svelte";
   import {
     age,
     buildConfigDataEntries,
     SECRET_VALUE_MASK,
+    toneFor,
     type ResourceMeter,
   } from "../lib/format";
-  import { buildContainersList, buildSelectorEntries, buildSpecRows } from "../lib/specs";
+  import {
+    buildContainersList,
+    buildControlledPodsPlan,
+    buildSelectorEntries,
+    buildSpecRows,
+    filterControlledPods,
+    podSummaryColumns,
+  } from "../lib/specs";
   import { kindKey, restartableKinds, scalableKinds } from "../lib/resources";
+  import YamlEditor from "./YamlEditor.svelte";
 
   let { sel }: { sel: Selection } = $props();
 
@@ -66,23 +88,28 @@
     }
   }
 
+  let loadedKey = "";
+
   $effect(() => {
-    // Reload whenever the selection changes.
-    sel.name;
-    sel.namespace;
-    sel.type;
-    editing = false;
-    replicas = null;
-    obj = null;
-    events = [];
-    metrics = {};
-    yaml = "";
-    neatYaml = "";
-    draft = "";
-    expandedMeta = {};
-    revealedKeys = {};
-    revealedVals = {};
-    load();
+    // Reload only when the selected object or active cluster actually changes.
+    const key = `${app.context}\0${sel.type.group}\0${sel.type.resource}\0${sel.namespace}\0${sel.name}`;
+    if (key === loadedKey) return;
+    loadedKey = key;
+    untrack(() => {
+      editing = false;
+      replicas = null;
+      obj = null;
+      events = [];
+      metrics = {};
+      yaml = "";
+      neatYaml = "";
+      draft = "";
+      expandedMeta = {};
+      revealedKeys = {};
+      revealedVals = {};
+      podPage = 0;
+      load();
+    });
   });
 
   function startEdit() {
@@ -196,13 +223,6 @@
       e.preventDefault();
       save();
     }
-    if (e.key === "Tab" && editing) {
-      e.preventDefault();
-      const ta = e.currentTarget as HTMLTextAreaElement;
-      const { selectionStart: s, selectionEnd: en } = ta;
-      draft = draft.slice(0, s) + "  " + draft.slice(en);
-      requestAnimationFrame(() => ta.setSelectionRange(s + 2, s + 2));
-    }
   }
 
   function startResize(e: PointerEvent) {
@@ -249,6 +269,144 @@
 
   const selectorEntries = $derived.by(() => buildSelectorEntries(obj));
   const containersList = $derived.by(() => buildContainersList(sel.type.kind, obj, metrics));
+
+  const POD_PAGE_SIZE = 5;
+  const podRowsMap = new Map<string, Row>();
+  const childRowsMap = new Map<string, Row>();
+  let podVersion = $state(0);
+  let podCols = $state<Column[]>([]);
+  let podLoading = $state(false);
+  let podError = $state("");
+  let podPage = $state(0);
+
+  const podsPlan = $derived.by(() => buildControlledPodsPlan(kk, obj, sel.namespace));
+  const podsPlanKey = $derived(
+    podsPlan
+      ? `${podsPlan.mode}\0${podsPlan.uid}\0${podsPlan.namespace}\0${podsPlan.labelSelector}\0${podsPlan.fieldSelector}\0${podsPlan.emptyHint}`
+      : "",
+  );
+
+  function resourceRefOrDefault(group: string, kind: string, fallback: ResourceRef): ResourceRef {
+    const hit = app.resources.find((r) => r.group === group && r.kind === kind);
+    return hit ? refOf(hit) : fallback;
+  }
+
+  $effect(() => {
+    const ctx = app.context;
+    const planKey = podsPlanKey;
+    const plan = untrack(() => podsPlan);
+    if (!ctx || !planKey || !plan || plan.emptyHint) {
+      untrack(() => {
+        podRowsMap.clear();
+        childRowsMap.clear();
+        podCols = [];
+        podError = "";
+        podLoading = false;
+        podVersion++;
+      });
+      return;
+    }
+
+    const podRef = untrack(() =>
+      resourceRefOrDefault("", "Pod", { group: "", version: "v1", resource: "pods", kind: "Pod", namespaced: true }),
+    );
+    const childRef =
+      plan.mode === "deployment"
+        ? untrack(() =>
+            resourceRefOrDefault("apps", "ReplicaSet", {
+              group: "apps",
+              version: "v1",
+              resource: "replicasets",
+              kind: "ReplicaSet",
+              namespaced: true,
+            }),
+          )
+        : plan.mode === "cronjob"
+          ? untrack(() =>
+              resourceRefOrDefault("batch", "Job", {
+                group: "batch",
+                version: "v1",
+                resource: "jobs",
+                kind: "Job",
+                namespaced: true,
+              }),
+            )
+          : null;
+
+    untrack(() => {
+      podRowsMap.clear();
+      childRowsMap.clear();
+      podCols = [];
+      podError = "";
+      podLoading = true;
+      podPage = 0;
+      podVersion++;
+    });
+
+    let podReady = false;
+    let childReady = childRef === null;
+    const syncReady = () => {
+      if (podReady && childReady) podLoading = false;
+    };
+
+    const cleanups: (() => void)[] = [];
+    const startSubWatch = (
+      ref: ResourceRef,
+      targetMap: Map<string, Row>,
+      isPodWatch: boolean,
+      labelSelector: string,
+      fieldSelector: string,
+    ) => {
+      const id = newStreamId();
+      const off = on<WatchEvent>(topics.watch(id), (ev) => {
+        if (ev.reset) {
+          targetMap.clear();
+          if (isPodWatch) {
+            if (ev.columns) podCols = ev.columns;
+            podReady = true;
+          } else {
+            childReady = true;
+          }
+          syncReady();
+        }
+        for (const r of ev.upserts ?? []) targetMap.set(r.key, r);
+        for (const k of ev.deletes ?? []) targetMap.delete(k);
+        if (ev.error) {
+          podError = ev.error;
+          podLoading = false;
+        } else if (ev.reset) {
+          podError = "";
+        }
+        podVersion++;
+      });
+      Kube.WatchFiltered(ctx, ref, plan.namespace, labelSelector, fieldSelector, id).catch((e) => {
+        podError = errorMessage(e);
+        podLoading = false;
+      });
+      cleanups.push(() => {
+        off();
+        Kube.StopWatch(id);
+      });
+    };
+
+    startSubWatch(podRef, podRowsMap, true, plan.labelSelector, plan.fieldSelector);
+    if (childRef) {
+      startSubWatch(childRef, childRowsMap, false, "", "");
+    }
+
+    return () => {
+      for (const stop of cleanups) stop();
+    };
+  });
+
+  const controlledPods = $derived.by(() => {
+    podVersion;
+    return filterControlledPods(podsPlan, podRowsMap.values(), childRowsMap.values());
+  });
+  const podColIdx = $derived.by(() => podSummaryColumns(podCols));
+  const podTotalPages = $derived(Math.max(1, Math.ceil(controlledPods.length / POD_PAGE_SIZE)));
+  const safePodPage = $derived(Math.min(podPage, podTotalPages - 1));
+  const pagedPods = $derived(controlledPods.slice(safePodPage * POD_PAGE_SIZE, (safePodPage + 1) * POD_PAGE_SIZE));
 </script>
 
 {#snippet copyBtn(value: string, id: string, label: string)}
@@ -744,6 +902,95 @@
           </section>
         {/if}
 
+        {#if podsPlan}
+          <section class="section">
+            <div class="section-head">
+              <h4>Pods ({controlledPods.length})</h4>
+              {#if podTotalPages > 1}
+                <div class="pager">
+                  <span class="muted pager-range">
+                    {safePodPage * POD_PAGE_SIZE + 1}–{Math.min((safePodPage + 1) * POD_PAGE_SIZE, controlledPods.length)} of {controlledPods.length}
+                  </span>
+                  <button
+                    class="mini"
+                    disabled={safePodPage === 0}
+                    onclick={() => (podPage = Math.max(0, safePodPage - 1))}
+                    title="Previous pods page"
+                  >
+                    ‹
+                  </button>
+                  <button
+                    class="mini"
+                    disabled={safePodPage >= podTotalPages - 1}
+                    onclick={() => (podPage = Math.min(podTotalPages - 1, safePodPage + 1))}
+                    title="Next pods page"
+                  >
+                    ›
+                  </button>
+                </div>
+              {/if}
+            </div>
+            {#if podsPlan.emptyHint}
+              <p class="muted empty-inline">{podsPlan.emptyHint}</p>
+            {:else if podError}
+              <div class="banner error inline-banner">{podError}</div>
+            {:else if podLoading && controlledPods.length === 0}
+              <p class="muted empty-inline">Loading…</p>
+            {:else if controlledPods.length === 0}
+              <p class="muted empty-inline">No pods.</p>
+            {:else}
+              <table class="ledger-table pods-table">
+                <thead>
+                  <tr>
+                    <th class="col-pod-name">Name</th>
+                    <th class="col-pod-ready">Ready</th>
+                    <th class="col-pod-status">Status</th>
+                    <th class="col-pod-age">Age</th>
+                    <th class="col-pod-restarts">Restarts</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each pagedPods as p (p.key)}
+                    {@const podStatus = podColIdx.statusIdx >= 0 ? (p.cells[podColIdx.statusIdx] ?? "—") : "—"}
+                    {@const podReady = podColIdx.readyIdx >= 0 ? (p.cells[podColIdx.readyIdx] ?? "—") : "—"}
+                    {@const podRestarts = podColIdx.restartsIdx >= 0 ? (p.cells[podColIdx.restartsIdx] ?? "—") : "—"}
+                    <tr
+                      class="pod-row"
+                      onclick={() => {
+                        if (!window.getSelection()?.toString()) {
+                          app.jumpToResource({ kind: "Pod", name: p.name }, p.namespace);
+                        }
+                      }}
+                    >
+                      <td class="col-pod-name">
+                        <button
+                          class="pod-link mono val-text"
+                          onclick={(e) => {
+                            e.stopPropagation();
+                            if (!window.getSelection()?.toString()) {
+                              app.jumpToResource({ kind: "Pod", name: p.name }, p.namespace);
+                            }
+                          }}
+                          title={`Open Pod ${p.namespace ? `${p.namespace}/` : ""}${p.name}`}
+                        >
+                          {p.name}
+                        </button>
+                        {#if podsPlan.mode === "node" && p.namespace}
+                          <div class="mono muted pod-ns val-text">{p.namespace}</div>
+                        {/if}
+                      </td>
+                      <td class="col-pod-ready mono val-text">{podReady}</td>
+                      <td class={`col-pod-status val-text tone-${toneFor(podStatus)}`}>{podStatus}</td>
+                      <td class="col-pod-age mono muted val-text">{p.created ? age(p.created, app.now) : "—"}</td>
+                      <td class="col-pod-restarts mono val-text">{podRestarts}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            {/if}
+          </section>
+        {/if}
+
         <section class="section">
           <h4>Events ({events.length})</h4>
           {#if events.length === 0}
@@ -790,16 +1037,11 @@
       <span class="grow"></span>
       {@render copyBtn(editing ? draft : activeYaml, "yaml:doc", neat ? "neated YAML" : "raw YAML")}
     </div>
-    <textarea
-      class="yaml"
-      class:editing
-      spellcheck="false"
-      readonly={!editing}
-      value={editing ? draft : activeYaml}
-      oninput={(e) => (draft = e.currentTarget.value)}
-      onkeydown={onKey}
-      placeholder={loading ? "Loading…" : ""}
-    ></textarea>
+    {#if editing}
+      <YamlEditor bind:value={draft} onkeydown={onKey} placeholder={loading ? "Loading…" : ""} />
+    {:else}
+      <YamlEditor readonly value={activeYaml} placeholder={loading ? "Loading…" : ""} />
+    {/if}
   {/if}
 </aside>
 
@@ -1246,26 +1488,92 @@
     margin-top: var(--space-1);
     font-size: 11px;
   }
+  .section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
+  }
+  .section-head h4 {
+    margin: 0;
+  }
+  .pager {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+  .pager-range {
+    margin-right: var(--space-1);
+  }
+  .pods-table {
+    table-layout: fixed;
+  }
+  .pods-table .col-pod-name {
+    min-width: 0;
+  }
+  .pods-table .col-pod-ready {
+    width: 50px;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .pods-table .col-pod-status {
+    width: 92px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pods-table .col-pod-age {
+    width: 44px;
+    text-align: right;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .pods-table .col-pod-restarts {
+    width: 60px;
+    text-align: right;
+    padding-right: 0;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .pods-table tbody tr.pod-row {
+    cursor: pointer;
+  }
+  .pods-table tbody tr.pod-row:hover {
+    background: var(--hover);
+  }
+  .pod-link {
+    all: unset;
+    display: block;
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--accent);
+    cursor: pointer;
+  }
+  .pod-link:hover {
+    text-decoration: underline;
+  }
+  .pod-link:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: 1px;
+    border-radius: 2px;
+  }
+  .pod-ns {
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .inline-banner {
+    margin: 0;
+  }
   .empty,
   .empty-inline {
     margin: 0;
-  }
-  .yaml {
-    flex: 1;
-    resize: none;
-    border: 0;
-    border-radius: 0;
-    padding: var(--space-3);
-    font-family: var(--mono);
-    font-size: 12px;
-    line-height: 16px;
-    background: var(--code-bg);
-    color: var(--text);
-    tab-size: 2;
-    white-space: pre;
-  }
-  .yaml.editing {
-    box-shadow: inset 2px 0 0 var(--accent);
   }
   .banner {
     margin: var(--space-2) var(--space-3);

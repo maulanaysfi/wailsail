@@ -44,6 +44,14 @@
   --bad: #f85149;
   --track: #2a3140;
   --mark-request: #ffffff;
+  --yaml-key: #79c0ff;
+  --yaml-str: #7ee787;
+  --yaml-num: #ffa657;
+  --yaml-bool: #ffab70;
+  --yaml-null: #ff7b72;
+  --yaml-comment: #8b949e;
+  --yaml-punct: #7d8594;
+  --yaml-meta: #d2a8ff;
   color-scheme: dark;
 }
 
@@ -64,6 +72,14 @@
   --bad: #cf222e;
   --track: #d4dbe4;
   --mark-request: #ffffff;
+  --yaml-key: #0550ae;
+  --yaml-str: #116329;
+  --yaml-num: #953800;
+  --yaml-bool: #bc4c00;
+  --yaml-null: #cf222e;
+  --yaml-comment: #6e7781;
+  --yaml-punct: #57606a;
+  --yaml-meta: #8250df;
   color-scheme: light;
 }
 

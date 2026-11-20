@@ -9,7 +9,15 @@ import {
   maskSecretKey,
   measureTextWidth,
 } from "../src/lib/format.ts";
-import { buildContainersList, buildSelectorEntries, buildSpecRows } from "../src/lib/specs.ts";
+import {
+  buildContainersList,
+  buildControlledPodsPlan,
+  buildSelectorEntries,
+  buildSpecRows,
+  filterControlledPods,
+  podSummaryColumns,
+} from "../src/lib/specs.ts";
+import { tokenizeYaml, tokenizeYamlLine } from "../src/lib/yamlHighlight.ts";
 
 test("maskSecretKey masks keys after first 4 chars and short keys as ****", () => {
   assert.equal(maskSecretKey(""), "****");
@@ -108,4 +116,95 @@ test("specs helpers extract Service, Deployment, and Pod container summaries", (
   assert.equal(containers.length, 1);
   assert.equal(containers[0].state, "Running (Ready)");
   assert.equal(containers[0].cpu.usedPct, 50);
+});
+
+test("tokenizeYaml preserves exact source text and highlights Kubernetes YAML tokens", () => {
+  const sample = [
+    "---",
+    "apiVersion: apps/v1",
+    "kind: Deployment # workload",
+    "metadata:",
+    '  "app.kubernetes.io/name": web',
+    "  url: https://example.com:8443/path#frag",
+    "spec:",
+    "  replicas: 3",
+    "  paused: false",
+    "  nullField: null",
+    "  template:",
+    "    - image: nginx:1.27",
+    "      command: |- ",
+    "        echo 'hello' # inline comment",
+  ].join("\n");
+
+  const tokenized = tokenizeYaml(sample);
+  assert.equal(
+    tokenized.map((line) => line.map((t) => t.text).join("")).join("\n"),
+    sample,
+  );
+
+  const kindLine = tokenizeYamlLine("kind: Deployment # workload");
+  assert.deepEqual(
+    kindLine.map((t) => [t.type, t.text]),
+    [
+      ["key", "kind"],
+      ["punct", ":"],
+      ["plain", " "],
+      ["str", "Deployment"],
+      ["plain", " "],
+      ["comment", "# workload"],
+    ],
+  );
+
+  const urlLine = tokenizeYamlLine("  url: https://example.com:8443/path#frag");
+  assert.deepEqual(
+    urlLine.map((t) => [t.type, t.text]),
+    [
+      ["plain", "  "],
+      ["key", "url"],
+      ["punct", ":"],
+      ["plain", " "],
+      ["str", "https://example.com:8443/path#frag"],
+    ],
+  );
+
+  assert.equal(tokenizeYamlLine("  replicas: 3").find((t) => t.type === "num")?.text, "3");
+  assert.equal(tokenizeYamlLine("  paused: false").find((t) => t.type === "bool")?.text, "false");
+  assert.equal(tokenizeYamlLine("  nullField: null").find((t) => t.type === "null")?.text, "null");
+});
+
+test("controlled pods plan and filter support Deployment rollouts, Services, and Nodes", () => {
+  const depPlan = buildControlledPodsPlan("apps/Deployment", { metadata: { uid: "dep-1", namespace: "prod" } }, "prod");
+  assert.ok(depPlan);
+  assert.equal(depPlan.mode, "deployment");
+
+  const rsOld = { key: "rs-old", uid: "rs-old", name: "web-111", namespace: "prod", created: "", cells: [], owner: { uid: "dep-1", apiVersion: "apps/v1", kind: "ReplicaSet", name: "web" } };
+  const rsNew = { key: "rs-new", uid: "rs-new", name: "web-222", namespace: "prod", created: "", cells: [], owner: { uid: "dep-1", apiVersion: "apps/v1", kind: "ReplicaSet", name: "web" } };
+  const otherRs = { key: "rs-x", uid: "rs-x", name: "other", namespace: "prod", created: "", cells: [], owner: { uid: "dep-2", apiVersion: "apps/v1", kind: "ReplicaSet", name: "other" } };
+  const p1 = { key: "p1", uid: "p1", name: "web-111-a", namespace: "prod", created: "", cells: [], owner: { uid: "rs-old", apiVersion: "apps/v1", kind: "ReplicaSet", name: "web-111" } };
+  const p2 = { key: "p2", uid: "p2", name: "web-222-b", namespace: "prod", created: "", cells: [], owner: { uid: "rs-new", apiVersion: "apps/v1", kind: "ReplicaSet", name: "web-222" } };
+  const pOther = { key: "p3", uid: "p3", name: "other-1", namespace: "prod", created: "", cells: [], owner: { uid: "rs-x", apiVersion: "apps/v1", kind: "ReplicaSet", name: "other" } };
+
+  assert.deepEqual(
+    filterControlledPods(depPlan, [p2, pOther, p1], [rsOld, rsNew, otherRs]).map((r) => r.name),
+    ["web-111-a", "web-222-b"],
+  );
+
+  const svcEmpty = buildControlledPodsPlan("/Service", { metadata: { uid: "s1", namespace: "default" }, spec: {} }, "default");
+  assert.ok(svcEmpty?.emptyHint);
+  const svcSel = buildControlledPodsPlan("/Service", { metadata: { uid: "s2", namespace: "prod" }, spec: { selector: { tier: "api", app: "web" } } }, "prod");
+  assert.equal(svcSel?.labelSelector, "app=web,tier=api");
+
+  const nodePlan = buildControlledPodsPlan("/Node", { metadata: { uid: "n1", name: "worker-1" } }, "");
+  assert.equal(nodePlan?.fieldSelector, "spec.nodeName=worker-1");
+  assert.equal(nodePlan?.namespace, "");
+
+  assert.deepEqual(
+    podSummaryColumns([
+      { name: "Name", type: "string", description: "", priority: 0 },
+      { name: "Ready", type: "string", description: "", priority: 0 },
+      { name: "Status", type: "string", description: "", priority: 0 },
+      { name: "Restarts", type: "integer", description: "", priority: 0 },
+    ]),
+    { readyIdx: 1, statusIdx: 2, restartsIdx: 3 },
+  );
 });

@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Zero-Dependency YAML Syntax Highlighting (`YamlEditor`, `yamlHighlight.ts`)**: Added lightweight YAML syntax highlighting for read-only viewing and live overlay editing in both `DetailDrawer` and `ApplyModal`, with matching Dark and Light theme tokens in `frontend/public/style.css`.
+- **Controlled Pods List in `DetailDrawer`**: Added a live-watching, paginated (`5` rows per page) `Pods` summary table (`Name`, `Ready`, `Status`, `Age`, `Restarts`, click a row to inspect that Pod) above `Events` for workload controllers (`Deployment` tracking both old and new `ReplicaSet`s during rollouts until old `ReplicaSet` pods terminate, `ReplicaSet`, `StatefulSet`, `DaemonSet`, `Job`, `CronJob`), `Service` (via `spec.selector`), and `Node` (via `spec.nodeName` field selector).
+- **Filtered Table Watches & Owner UID (`internal/kube`)**: Added `Service.WatchFiltered` (`labelSelector` / `fieldSelector` query support) and `OwnerRef.UID` on `Row` metadata.
+
+### Changed
+- **CI Workflow Actions & Release Flag (`.github/workflows/ci.yml`)**: Updated GitHub Actions steps (`checkout@v6`, `setup-go@v6`, `setup-node@v6`, `upload-artifact@v7`, `download-artifact@v8`) to Node 24 majors and passed `--latest` on `gh release create`.
+
+### Fixed
+- **DetailDrawer Reload Guard**: Scoped `DetailDrawer`'s selection reload `$effect` with an explicit context/resource/namespace/name key and `untrack` so unrelated UI state toggles (such as toggling the bottom dock) cannot clear the loaded object or flash `Loading…`.
+
 ## [0.1.3-beta] - 2026-11-19
 
 ### Added
