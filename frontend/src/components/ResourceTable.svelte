@@ -14,6 +14,7 @@
   import { app, cssZoom, refOf } from "../lib/store.svelte";
   import { age, buildResourceMeter, clearMeasureTextCache, compareCells, measureTextWidth, toneFor, type ResourceMeter } from "../lib/format";
   import { kindKey, resourceKey } from "../lib/resources";
+  import { unreadyWorkloadCells, workloadColumnIndices } from "../lib/specs";
 
   const ROW_H = 32;
   const MIN_COL_W = 48;
@@ -139,18 +140,20 @@
     version;
     podMetrics;
     fontGen;
-    if (!isPod) return { cpu: 36, memory: 36 };
+    if (!isPod) return { cpu: 0, memory: 0 };
     const font = '12px "Google Sans Flex", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-    let cpu = 28;
-    let memory = 28;
+    let cpu = 0;
+    let memory = 0;
     for (const r of rows.values()) {
       const ct = podMeterFor(r, "cpu").usedText;
       const mt = podMeterFor(r, "memory").usedText;
-      cpu = Math.max(cpu, measureTextWidth(ct, font), Math.ceil(ct.length * 8));
-      memory = Math.max(memory, measureTextWidth(mt, font), Math.ceil(mt.length * 8));
+      cpu = Math.max(cpu, measureTextWidth(ct, font));
+      memory = Math.max(memory, measureTextWidth(mt, font));
     }
-    return { cpu: cpu + 6, memory: memory + 6 };
+    return { cpu, memory };
   });
+
+  const workloadColIdx = $derived.by(() => workloadColumnIndices(columns));
 
   interface DisplayCol {
     key: string;
@@ -492,13 +495,22 @@
       <tbody>
         {#if first > 0}<tr class="spacer" style={`height:${first * ROW_H}px`}></tr>{/if}
         {#each visible as r (r.key)}
+          {@const unready = unreadyWorkloadCells(curKindKey, r.cells, workloadColIdx)}
           <tr class:selected={isSelected(r)} onclick={() => select(r)}>
             {#each displayCols as c (c.key)}
               {#if c.meter}
                 <td>{@render cellMeter(podMeterFor(r, c.meter), maxMeterPx[c.meter])}</td>
               {:else}
                 {@const v = c.get(r)}
-                <td class={c.status ? `tone-${toneFor(v)}` : ""} class:name-col={c.key === "c0" || c.key === "name"}>{v}</td>
+                {@const isName = c.key === "c0" || c.key === "name"}
+                {@const isYellow =
+                  (isName && unready.name) ||
+                  (c.id.toLowerCase() === "ready" && unready.ready) ||
+                  (c.id.toLowerCase() === "completions" && unready.completions)}
+                <td
+                  class={`${c.status ? `tone-${toneFor(v)}` : ""}${isYellow ? " tone-warn" : ""}`.trim()}
+                  class:name-col={isName}
+                >{v}</td>
               {/if}
             {/each}
           </tr>
@@ -664,11 +676,14 @@
   td.name-col {
     color: var(--text-strong);
   }
+  td.name-col.tone-warn {
+    color: var(--warn);
+  }
   .cell-meter {
     display: grid;
-    grid-template-columns: var(--text-w, 36px) minmax(48px, 1fr);
+    grid-template-columns: var(--text-w, auto) minmax(48px, 1fr);
     align-items: center;
-    gap: 2px;
+    gap: var(--space-2);
   }
   .cell-meter-text,
   .cell-meter-plain {

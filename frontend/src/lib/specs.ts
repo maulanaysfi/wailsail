@@ -358,3 +358,81 @@ export function podSummaryColumns(cols: Column[]): PodSummaryColumns {
   });
   return { readyIdx, statusIdx, restartsIdx };
 }
+
+export interface WorkloadColumnIndices {
+  readyIdx: number;
+  desiredIdx: number;
+  completionsIdx: number;
+  statusIdx: number;
+}
+
+const completedStatuses = new Set(["completed", "complete", "succeeded"]);
+
+function parseFraction(raw: string): [number, number] | null {
+  const m = /^(\d+)\s*\/\s*(\d+)$/.exec(raw.trim());
+  if (!m) return null;
+  return [Number(m[1]), Number(m[2])];
+}
+
+/** Locate readiness-related column indices from a table's column definitions. */
+export function workloadColumnIndices(cols: Column[]): WorkloadColumnIndices {
+  let readyIdx = -1;
+  let desiredIdx = -1;
+  let completionsIdx = -1;
+  let statusIdx = -1;
+  cols.forEach((c, i) => {
+    const n = c.name.toLowerCase();
+    if (n === "ready" && readyIdx === -1) readyIdx = i;
+    else if (n === "desired" && desiredIdx === -1) desiredIdx = i;
+    else if (n === "completions" && completionsIdx === -1) completionsIdx = i;
+    else if ((n === "status" || n === "phase") && statusIdx === -1) statusIdx = i;
+  });
+  return { readyIdx, desiredIdx, completionsIdx, statusIdx };
+}
+
+/**
+ * Determine which columns (Name and/or Ready/Completions) should be highlighted
+ * yellow for workloads that are not ready yet.
+ * Scaled-to-zero (`0/0` or Desired `0`) and completed (`Complete`/`Completed`/`Succeeded`)
+ * workloads remain normal; error states with unmet readiness are highlighted yellow.
+ */
+export function unreadyWorkloadCells(
+  kindKeyStr: string,
+  cells: string[],
+  idx: WorkloadColumnIndices,
+): { name: boolean; ready: boolean; completions: boolean } {
+  const none = { name: false, ready: false, completions: false };
+  const status = idx.statusIdx >= 0 ? (cells[idx.statusIdx] ?? "").trim().toLowerCase() : "";
+  if (completedStatuses.has(status)) return none;
+
+  if (kindKeyStr === "/Pod" || kindKeyStr === "apps/Deployment" || kindKeyStr === "apps/StatefulSet") {
+    if (idx.readyIdx < 0) return none;
+    const frac = parseFraction(cells[idx.readyIdx] ?? "");
+    if (!frac) return none;
+    const [ready, desired] = frac;
+    if (desired === 0 || ready >= desired) return none;
+    return { name: true, ready: true, completions: false };
+  }
+
+  if (kindKeyStr === "apps/ReplicaSet" || kindKeyStr === "apps/DaemonSet") {
+    if (idx.desiredIdx < 0 || idx.readyIdx < 0) return none;
+    const dStr = (cells[idx.desiredIdx] ?? "").trim();
+    const rStr = (cells[idx.readyIdx] ?? "").trim();
+    if (!/^\d+$/.test(dStr) || !/^\d+$/.test(rStr)) return none;
+    const desired = Number(dStr);
+    const ready = Number(rStr);
+    if (desired === 0 || ready >= desired) return none;
+    return { name: true, ready: false, completions: false };
+  }
+
+  if (kindKeyStr === "batch/Job") {
+    if (idx.completionsIdx < 0) return none;
+    const frac = parseFraction(cells[idx.completionsIdx] ?? "");
+    if (!frac) return none;
+    const [done, target] = frac;
+    if (target === 0 || done >= target) return none;
+    return { name: true, ready: false, completions: true };
+  }
+
+  return none;
+}

@@ -218,9 +218,10 @@ textarea:focus {
   height: var(--meter-h);
   background: var(--track);
   border-radius: 999px;
-  overflow: hidden;
 }
 .meter-fill {
+  position: relative;
+  z-index: 1;
   height: 100%;
   border-radius: 999px;
 }
@@ -235,11 +236,13 @@ textarea:focus {
 }
 .meter-req-mark {
   position: absolute;
-  top: 0;
-  bottom: 0;
+  top: -2px;
+  bottom: -2px;
+  z-index: 2;
   width: 2px;
   margin-left: -1px;
   background: var(--mark-request);
+  border-radius: 1px;
   pointer-events: none;
 }
 .meter-req-mark.warn {

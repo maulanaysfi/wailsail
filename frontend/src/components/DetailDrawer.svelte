@@ -28,6 +28,7 @@
     buildSpecRows,
     filterControlledPods,
     podSummaryColumns,
+    unreadyWorkloadCells,
   } from "../lib/specs";
   import { kindKey, restartableKinds, scalableKinds } from "../lib/resources";
   import YamlEditor from "./YamlEditor.svelte";
@@ -44,9 +45,14 @@
   let draft = $state("");
   let editing = $state(false);
   let loading = $state(false);
+  function defaultDrawerWidth(): number {
+    if (typeof window === "undefined") return 544;
+    return Math.min(1100, Math.max(384, Math.round((window.innerWidth / cssZoom()) * 0.4)));
+  }
+
   let saving = $state(false);
   let error = $state("");
-  let width = $state(600);
+  let width = $state(defaultDrawerWidth());
   let expandedMeta = $state<Record<string, boolean>>({});
   let revealedKeys = $state<Record<string, boolean>>({});
   let revealedVals = $state<Record<string, boolean>>({});
@@ -954,6 +960,12 @@
                     {@const podStatus = podColIdx.statusIdx >= 0 ? (p.cells[podColIdx.statusIdx] ?? "—") : "—"}
                     {@const podReady = podColIdx.readyIdx >= 0 ? (p.cells[podColIdx.readyIdx] ?? "—") : "—"}
                     {@const podRestarts = podColIdx.restartsIdx >= 0 ? (p.cells[podColIdx.restartsIdx] ?? "—") : "—"}
+                    {@const podUnready = unreadyWorkloadCells("/Pod", p.cells, {
+                      readyIdx: podColIdx.readyIdx,
+                      desiredIdx: -1,
+                      completionsIdx: -1,
+                      statusIdx: podColIdx.statusIdx,
+                    }).ready}
                     <tr
                       class="pod-row"
                       onclick={() => {
@@ -979,7 +991,7 @@
                           <div class="mono muted pod-ns val-text">{p.namespace}</div>
                         {/if}
                       </td>
-                      <td class="col-pod-ready mono val-text">{podReady}</td>
+                      <td class="col-pod-ready mono val-text" class:tone-warn={podUnready}>{podReady}</td>
                       <td class={`col-pod-status val-text tone-${toneFor(podStatus)}`}>{podStatus}</td>
                       <td class="col-pod-age mono muted val-text">{p.created ? age(p.created, app.now) : "—"}</td>
                       <td class="col-pod-restarts mono val-text">{podRestarts}</td>

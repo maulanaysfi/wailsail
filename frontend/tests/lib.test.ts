@@ -16,6 +16,8 @@ import {
   buildSpecRows,
   filterControlledPods,
   podSummaryColumns,
+  unreadyWorkloadCells,
+  workloadColumnIndices,
 } from "../src/lib/specs.ts";
 import { tokenizeYaml, tokenizeYamlLine } from "../src/lib/yamlHighlight.ts";
 
@@ -212,4 +214,43 @@ test("controlled pods plan and filter support Deployment rollouts, Services, and
     ]),
     { readyIdx: 1, statusIdx: 2, restartsIdx: 3 },
   );
+});
+
+test("unreadyWorkloadCells highlights expected columns and respects 0/0, Completed, and errors", () => {
+  const podCols = workloadColumnIndices([
+    { name: "Name", type: "string", description: "", priority: 0 },
+    { name: "Ready", type: "string", description: "", priority: 0 },
+    { name: "Status", type: "string", description: "", priority: 0 },
+  ]);
+  assert.deepEqual(unreadyWorkloadCells("/Pod", ["p", "1/1", "Running"], podCols), { name: false, ready: false, completions: false });
+  assert.deepEqual(unreadyWorkloadCells("/Pod", ["p", "0/1", "Pending"], podCols), { name: true, ready: true, completions: false });
+  assert.deepEqual(unreadyWorkloadCells("/Pod", ["p", "0/1", "CrashLoopBackOff"], podCols), { name: true, ready: true, completions: false });
+  assert.deepEqual(unreadyWorkloadCells("/Pod", ["p", "0/1", "Completed"], podCols), { name: false, ready: false, completions: false });
+
+  const depCols = workloadColumnIndices([
+    { name: "Name", type: "string", description: "", priority: 0 },
+    { name: "Ready", type: "string", description: "", priority: 0 },
+  ]);
+  assert.deepEqual(unreadyWorkloadCells("apps/Deployment", ["d", "0/0"], depCols), { name: false, ready: false, completions: false });
+  assert.deepEqual(unreadyWorkloadCells("apps/Deployment", ["d", "1/3"], depCols), { name: true, ready: true, completions: false });
+  assert.deepEqual(unreadyWorkloadCells("apps/StatefulSet", ["s", "0/2"], depCols), { name: true, ready: true, completions: false });
+
+  const rsCols = workloadColumnIndices([
+    { name: "Name", type: "string", description: "", priority: 0 },
+    { name: "Desired", type: "integer", description: "", priority: 0 },
+    { name: "Current", type: "integer", description: "", priority: 0 },
+    { name: "Ready", type: "integer", description: "", priority: 0 },
+  ]);
+  assert.deepEqual(unreadyWorkloadCells("apps/ReplicaSet", ["rs", "0", "0", "0"], rsCols), { name: false, ready: false, completions: false });
+  assert.deepEqual(unreadyWorkloadCells("apps/ReplicaSet", ["rs", "3", "3", "2"], rsCols), { name: true, ready: false, completions: false });
+  assert.deepEqual(unreadyWorkloadCells("apps/DaemonSet", ["ds", "4", "4", "3"], rsCols), { name: true, ready: false, completions: false });
+
+  const jobCols = workloadColumnIndices([
+    { name: "Name", type: "string", description: "", priority: 0 },
+    { name: "Status", type: "string", description: "", priority: 0 },
+    { name: "Completions", type: "string", description: "", priority: 0 },
+  ]);
+  assert.deepEqual(unreadyWorkloadCells("batch/Job", ["j", "Running", "0/1"], jobCols), { name: true, ready: false, completions: true });
+  assert.deepEqual(unreadyWorkloadCells("batch/Job", ["j", "Failed", "0/1"], jobCols), { name: true, ready: false, completions: true });
+  assert.deepEqual(unreadyWorkloadCells("batch/Job", ["j", "Complete", "1/1"], jobCols), { name: false, ready: false, completions: false });
 });
