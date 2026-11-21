@@ -39,7 +39,8 @@
   let tab = $state<"overview" | "yaml" | "manifest">("overview");
   let obj = $state<Record<string, any> | null>(null);
   let helmDetail = $state<HelmReleaseDetail | null>(null);
-  let helmValuesMode = $state<"user" | "merged">("user");
+  let helmUserOnly = $state(false);
+  let revPage = $state(0);
   let rollingBackRev = $state<number | null>(null);
   let events = $state<EventInfo[]>([]);
   let metrics = $state<Record<string, ContainerMetrics>>({});
@@ -71,14 +72,19 @@
   const canRestart = $derived(restartableKinds.has(kk));
   const activeYaml = $derived(
     isHelmRelease
-      ? helmValuesMode === "merged"
-        ? (helmDetail?.mergedValues ?? "")
-        : (helmDetail?.userValues ?? "")
+      ? helmUserOnly
+        ? (helmDetail?.userValues ?? "")
+        : (helmDetail?.mergedValues ?? "")
       : neat
         ? neatYaml
         : yaml,
   );
   const dirty = $derived(editing && draft !== activeYaml);
+  const REV_PAGE_SIZE = 5;
+  const helmHistory = $derived(helmDetail?.history ?? []);
+  const revTotalPages = $derived(Math.max(1, Math.ceil(helmHistory.length / REV_PAGE_SIZE)));
+  const safeRevPage = $derived(Math.min(revPage, revTotalPages - 1));
+  const pagedRevisions = $derived(helmHistory.slice(safeRevPage * REV_PAGE_SIZE, (safeRevPage + 1) * REV_PAGE_SIZE));
 
   let loadSeq = 0;
 
@@ -97,7 +103,7 @@
         helmDetail = hd;
         yaml = hd.userValues ?? "";
         neatYaml = hd.mergedValues ?? "";
-        if (!editing) draft = helmValuesMode === "merged" ? neatYaml : yaml;
+        if (!editing) draft = helmUserOnly ? yaml : neatYaml;
         return;
       }
       const detail = await Kube.GetDetail(ctx, ref, ns, name);
@@ -141,6 +147,7 @@
       revealedKeys = {};
       revealedVals = {};
       podPage = 0;
+      revPage = 0;
       load();
     });
   });
@@ -748,8 +755,33 @@
           </section>
 
           <section class="section">
-            <h4>Revisions ({(helmDetail.history ?? []).length})</h4>
-            {#if (helmDetail.history ?? []).length === 0}
+            <div class="section-head">
+              <h4>Revisions ({helmHistory.length})</h4>
+              {#if revTotalPages > 1}
+                <div class="pager">
+                  <span class="muted pager-range">
+                    {safeRevPage * REV_PAGE_SIZE + 1}–{Math.min((safeRevPage + 1) * REV_PAGE_SIZE, helmHistory.length)} of {helmHistory.length}
+                  </span>
+                  <button
+                    class="mini"
+                    disabled={safeRevPage === 0}
+                    onclick={() => (revPage = Math.max(0, safeRevPage - 1))}
+                    title="Previous revisions page"
+                  >
+                    ‹
+                  </button>
+                  <button
+                    class="mini"
+                    disabled={safeRevPage >= revTotalPages - 1}
+                    onclick={() => (revPage = Math.min(revTotalPages - 1, safeRevPage + 1))}
+                    title="Next revisions page"
+                  >
+                    ›
+                  </button>
+                </div>
+              {/if}
+            </div>
+            {#if helmHistory.length === 0}
               <p class="muted empty-inline">No revision history.</p>
             {:else}
               <table class="ledger-table revisions-table">
@@ -764,7 +796,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  {#each helmDetail.history ?? [] as h (h.revision)}
+                  {#each pagedRevisions as h (h.revision)}
                     <tr>
                       <td class="col-rev-num mono val-text">{h.revision}</td>
                       <td class={`col-rev-status val-text tone-${toneFor(h.status)}`}>{h.status}</td>
@@ -1225,26 +1257,8 @@
     <div class="yaml-bar">
       {#if isHelmRelease}
         <label class="neat-toggle">
-          <input
-            type="radio"
-            name="helm-values-mode"
-            value="user"
-            checked={helmValuesMode === "user"}
-            disabled={editing}
-            onchange={() => (helmValuesMode = "user")}
-          />
+          <input type="checkbox" bind:checked={helmUserOnly} disabled={editing} />
           User values
-        </label>
-        <label class="neat-toggle">
-          <input
-            type="radio"
-            name="helm-values-mode"
-            value="merged"
-            checked={helmValuesMode === "merged"}
-            disabled={editing}
-            onchange={() => (helmValuesMode = "merged")}
-          />
-          Merged values
         </label>
       {:else}
         <label class="neat-toggle">
@@ -1256,7 +1270,7 @@
       {@render copyBtn(
         editing ? draft : activeYaml,
         "yaml:doc",
-        isHelmRelease ? (helmValuesMode === "merged" ? "merged values" : "user values") : neat ? "neated YAML" : "raw YAML",
+        isHelmRelease ? (helmUserOnly ? "user values" : "merged values") : neat ? "neated YAML" : "raw YAML",
       )}
     </div>
     {#if editing}
