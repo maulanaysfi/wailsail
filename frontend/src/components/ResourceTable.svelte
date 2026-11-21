@@ -147,8 +147,8 @@
     for (const r of rows.values()) {
       const ct = podMeterFor(r, "cpu").usedText;
       const mt = podMeterFor(r, "memory").usedText;
-      cpu = Math.max(cpu, measureTextWidth(ct, font));
-      memory = Math.max(memory, measureTextWidth(mt, font));
+      cpu = Math.max(cpu, measureTextWidth(ct, font, true));
+      memory = Math.max(memory, measureTextWidth(mt, font, true));
     }
     return { cpu, memory };
   });
@@ -683,7 +683,7 @@
   }
   .cell-meter {
     display: grid;
-    grid-template-columns: var(--text-w, auto) minmax(48px, 1fr);
+    grid-template-columns: minmax(var(--text-w, auto), max-content) minmax(48px, 1fr);
     align-items: center;
     gap: var(--space-2);
   }
@@ -697,8 +697,6 @@
   }
   .cell-meter-text {
     text-align: left;
-    overflow: hidden;
-    text-overflow: clip;
   }
   .empty {
     text-align: center;

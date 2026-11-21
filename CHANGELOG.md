@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Pod Usage Text Cropping (`format.ts`, `ResourceTable.svelte`)**: Measured Pod CPU/Memory usage strings using an identically styled `tabular-nums` DOM span instead of `<canvas>` (whose proportional digits could under-measure `tabular-nums` strings) and allowed `.cell-meter-text` to expand to `max-content` without inner clipping so trailing units (`173m`, `815Mi`) are never cropped.
 - **Resource Meter Fill Clipping**: Added an inner rounded `.meter-clip` container inside `.meter-track` (`style.css`, `ResourceTable.svelte`, `DetailDrawer.svelte`) so low-percentage usage fills render as a partial circle clipped to the pill track instead of a flat vertical line while keeping `.meter-req-mark` extending 2px above and below the bar.
 
 ## [0.2.0-beta] - 2026-11-21

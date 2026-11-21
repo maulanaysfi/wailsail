@@ -85,6 +85,7 @@ test("measureTextWidth caches and clears cleanly", () => {
   const w1 = measureTextWidth("250m", "12px sans-serif");
   assert.equal(w1, 32);
   assert.equal(measureTextWidth("250m", "12px sans-serif"), w1);
+  assert.equal(measureTextWidth("250m", "12px sans-serif", true), w1);
   clearMeasureTextCache();
   assert.equal(measureTextWidth("250m", "12px sans-serif"), w1);
 });
