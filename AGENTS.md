@@ -42,8 +42,8 @@
 │   ├── bindings/           # Auto-generated Wails v3 TS bindings (do not hand-edit)
 │   └── src/
 │       ├── App.svelte
-│       ├── lib/            # api.ts, format.ts, resources.ts, specs.ts, store.svelte.ts
-│       └── components/     # TopBar, Sidebar, ResourceTable, DetailDrawer, BottomDock, LogViewer, TerminalView, modals
+│       ├── lib/            # api.ts, format.ts, resources.ts, specs.ts, store.svelte.ts, yamlHighlight.ts
+│       └── components/     # TopBar, Sidebar, ResourceTable, DetailDrawer, YamlEditor, BottomDock, LogViewer, TerminalView, modals
 ├── build/                  # Wails v3 config.yml, icons, desktop/installer packaging templates
 ├── scripts/                # Build, test, validation, and SHA256SUMS release script (build.sh)
 └── bin/                    # Compiled binaries and staged dist artifacts (gitignored)
@@ -84,14 +84,20 @@ flowchart LR
   - `Namespaces(contextName string) ([]string, error)`
   - `APIResources(contextName string) ([]ResourceType, error)`
   - `Watch(contextName string, ref ResourceRef, namespace, streamID string) (string, error)` — requests `meta.k8s.io/v1` `Table` rows, coalesces updates every 150ms, relists on `410 Gone`, emits `WatchEvent` (`reset`, `columns`, `upserts`, `deletes`, `error`)
+  - `WatchFiltered(contextName string, ref ResourceRef, namespace, labelSelector, fieldSelector, streamID string) (string, error)` — selector-filtered table watch variant used by `DetailDrawer` controlled `Pods` views
   - `StopWatch(streamID string)`
   - `GetDetail(contextName string, ref ResourceRef, namespace, name string) (ObjectDetail, error)` — returns structured object, YAML without `managedFields`, neated YAML (`ObjectToNeatYAML`), related Kubernetes events, and live container CPU/memory usage (`ContainerMetrics` via `metrics.k8s.io/v1beta1`)
   - `PodMetrics(contextName, namespace string) (map[string]ContainerMetrics, error)` — returns live container CPU/memory usage for pods in a namespace (or all namespaces)
   - `Apply(contextName, manifest, defaultNamespace string) ([]ApplyResult, error)` — multi-document YAML/JSON + `List` expansion via Server-Side Apply (`fieldManager: "wailsail"`)
+  - `Update(contextName string, ref ResourceRef, namespace, name, manifest string) (ApplyResult, error)` — single-object Server-Side Apply for `DetailDrawer` YAML edits, rejecting immutable identity changes (`kind`, `apiVersion` group, `metadata.name`, `metadata.namespace`)
   - `Delete(contextName string, ref ResourceRef, namespace, name string) error`
   - `Scale(contextName string, ref ResourceRef, namespace, name string, replicas int32) error`
   - `Restart(contextName string, ref ResourceRef, namespace, name string) error`
   - `PodContainers(contextName, namespace, pod string) ([]ContainerInfo, error)`
+  - `GetHelmRelease(contextName, namespace, name string) (HelmReleaseDetail, error)` — decodes `sh.helm.release.v1` Secrets into release metadata, user/merged values, rendered manifest, and revision history
+  - `RollbackHelmRelease(contextName, namespace, name string, revision int) error` — reconciles target revision manifest via Server-Side Apply and records revision `v<N+1>`
+  - `UpgradeHelmRelease(contextName, namespace, name, valuesYAML string) error` — re-renders embedded chart templates against edited values, reconciles resources via Server-Side Apply, and records revision `v<N+1>`
+  - `UninstallHelmRelease(contextName, namespace, name string) error` — deletes managed manifest resources and release history Secrets
 
 ### `internal/logs`
 - `Service`: `Start(contextName, namespace, pod string, opts Options, streamID string) (string, error)` and `Stop(streamID string)`.

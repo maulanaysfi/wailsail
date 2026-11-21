@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.2.0-beta] - 2026-11-21
+
+### Added
+- **Helm Release Support (`internal/kube/helm.go`, `DetailDrawer`, `Sidebar`)**:
+  - Added a `Helm` (`Release`) menu section placed right after `Cluster` in the sidebar, streaming live deduplicated latest-revision releases (`Name`, `Revision`, `Status`, `Chart`, `App Version`, `Age`) from in-cluster `sh.helm.release.v1` Secrets without adding external Helm SDK dependencies.
+  - Added `DetailDrawer` support for Helm releases with `Overview` (release metadata, chart/app versions, deployment timestamps, notes, and a paginated 5-row `Revisions` history table with one-click **Rollback**), `Values` (`User values` checkbox toggle matching the `Neat` YAML toggle—unchecked shows merged values, checked shows user-only values—plus live YAML editing & **Apply** to re-render templates and upgrade the release to revision `v<N+1>`), `Manifest` (syntax-highlighted rendered Kubernetes manifest), and **Uninstall** (deleting managed resources and release history).
+- **Zero-Dependency YAML Syntax Highlighting (`YamlEditor`, `yamlHighlight.ts`)**: Added lightweight YAML syntax highlighting for read-only viewing and live overlay editing in both `DetailDrawer` and `ApplyModal`, with matching Dark and Light theme tokens in `frontend/public/style.css`.
+- **Controlled Pods List in `DetailDrawer`**: Added a live-watching, paginated (`5` rows per page) `Pods` summary table (`Name`, `Ready`, `Status`, `Age`, `Restarts`, click a row to inspect that Pod) above `Events` for workload controllers (`Deployment` tracking both old and new `ReplicaSet`s during rollouts until old `ReplicaSet` pods terminate, `ReplicaSet`, `StatefulSet`, `DaemonSet`, `Job`, `CronJob`), `Service` (via `spec.selector`), `Node` (via `spec.nodeName` field selector), and `Namespace` (Pods in that namespace).
+- **Filtered Table Watches, Immutable Edit Guard & Owner UID (`internal/kube`)**: Added `Service.WatchFiltered` (`labelSelector` / `fieldSelector` query support), `Service.Update` (blocking changes to immutable identity fields `kind`, `apiVersion` group, `metadata.name`, and `metadata.namespace` when editing from `DetailDrawer`), and `OwnerRef.UID` on `Row` metadata.
+
+### Changed
+- **Lazy-Loaded Terminal Bundle (`BottomDock`)**: Dynamically imported `TerminalView` (`@xterm/xterm`) when opening a container shell tab, splitting it out of the main JS chunk to keep initial startup bundle well under Vite's 500 kB limit.
+- **Resource Meter & Drawer Layout**: Set the Pod table's CPU/Memory usage text-to-bar gap to `8px` (`--space-2`) starting from the exact longest usage text width, extended the vertical request marker line 2px above and 2px below all usage bars (`z-index: 2`, removing track clipping), and initialized `DetailDrawer` width to 40% of the app viewport width when opened.
+- **Unready Workload Highlighting**: Highlighted unready workload rows in yellow (`--warn`) while leaving `0/0` scaled-to-zero and `Complete`/`Completed`/`Succeeded` workloads normal and highlighting unready error states (`Name` + `Ready` for `Pod`, `Deployment`, `StatefulSet`; `Name` for `ReplicaSet`, `DaemonSet`; `Name` + `Completions` for `Job`; `Ready` only inside `DetailDrawer`'s `Pods` table).
+- **CI Workflow Actions & Release Flag (`.github/workflows/ci.yml`)**: Updated GitHub Actions steps (`checkout@v6`, `setup-go@v6`, `setup-node@v6`, `upload-artifact@v7`, `download-artifact@v8`) to Node 24 majors and passed `--latest` on `gh release create`.
+
+### Fixed
+- **DetailDrawer Reload Guard**: Scoped `DetailDrawer`'s selection reload `$effect` with an explicit context/resource/namespace/name key and `untrack` so unrelated UI state toggles (such as toggling the bottom dock) cannot clear the loaded object or flash `Loading…`.
+
 ## [0.1.3-beta] - 2026-11-19
 
 ### Added

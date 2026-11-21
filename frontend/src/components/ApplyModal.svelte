@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Kube, errorMessage } from "../lib/api";
   import { app } from "../lib/store.svelte";
+  import YamlEditor from "./YamlEditor.svelte";
 
   let manifest = $state(
     `apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: example\ndata:\n  hello: world\n`,
@@ -30,7 +31,9 @@
       <button class="ghost" onclick={() => (app.showApply = false)} title="Close apply dialog (Esc)">✕</button>
     </header>
     {#if error}<div class="banner error">{error}</div>{/if}
-    <textarea class="editor" spellcheck="false" bind:value={manifest}></textarea>
+    <div class="editor-box">
+      <YamlEditor bind:value={manifest} />
+    </div>
     <footer>
       <button onclick={() => (app.showApply = false)} title="Cancel and close dialog (Esc)">Cancel</button>
       <button class="primary" onclick={apply} disabled={busy || !manifest.trim()} title="Server-side apply manifest to cluster">
@@ -41,14 +44,14 @@
 </div>
 
 <style>
-  .editor {
+  .editor-box {
+    display: flex;
     width: 100%;
     height: 344px;
-    padding: var(--space-2);
-    font-family: var(--mono);
-    font-size: 12px;
-    line-height: 16px;
-    background: var(--code-bg);
+    min-height: 160px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
     resize: vertical;
   }
   footer {

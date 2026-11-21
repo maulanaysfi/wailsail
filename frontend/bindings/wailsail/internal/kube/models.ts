@@ -106,6 +106,39 @@ export interface EventInfo {
 }
 
 /**
+ * HelmReleaseDetail bundles full inspection data for a selected Helm release.
+ */
+export interface HelmReleaseDetail {
+    "name": string;
+    "namespace": string;
+    "revision": number;
+    "status": string;
+    "description": string;
+    "firstDeployed": string;
+    "lastDeployed": string;
+    "chart": string;
+    "chartVersion": string;
+    "appVersion": string;
+    "notes": string;
+    "userValues": string;
+    "mergedValues": string;
+    "manifest": string;
+    "history": HelmRevisionInfo[] | null;
+}
+
+/**
+ * HelmRevisionInfo summarizes one revision in a Helm release's history.
+ */
+export interface HelmRevisionInfo {
+    "revision": number;
+    "updated": string;
+    "status": string;
+    "chart": string;
+    "appVersion": string;
+    "description": string;
+}
+
+/**
  * ObjectDetail bundles the structured object, its YAML representation,
  * neated YAML, related Kubernetes events, and live container metrics.
  */

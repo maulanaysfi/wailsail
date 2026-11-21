@@ -1,19 +1,47 @@
 <script lang="ts">
-  import { Kube, errorMessage, type ContainerMetrics, type EventInfo } from "../lib/api";
+  import { untrack } from "svelte";
+  import {
+    Kube,
+    newStreamId,
+    on,
+    topics,
+    errorMessage,
+    type Column,
+    type ContainerMetrics,
+    type EventInfo,
+    type HelmReleaseDetail,
+    type ResourceRef,
+    type Row,
+    type WatchEvent,
+  } from "../lib/api";
   import { app, cssZoom, refOf, type Selection } from "../lib/store.svelte";
   import {
     age,
     buildConfigDataEntries,
     SECRET_VALUE_MASK,
+    toneFor,
     type ResourceMeter,
   } from "../lib/format";
-  import { buildContainersList, buildSelectorEntries, buildSpecRows } from "../lib/specs";
+  import {
+    buildContainersList,
+    buildControlledPodsPlan,
+    buildSelectorEntries,
+    buildSpecRows,
+    filterControlledPods,
+    podSummaryColumns,
+    unreadyWorkloadCells,
+  } from "../lib/specs";
   import { kindKey, restartableKinds, scalableKinds } from "../lib/resources";
+  import YamlEditor from "./YamlEditor.svelte";
 
   let { sel }: { sel: Selection } = $props();
 
-  let tab = $state<"overview" | "yaml">("overview");
+  let tab = $state<"overview" | "yaml" | "manifest">("overview");
   let obj = $state<Record<string, any> | null>(null);
+  let helmDetail = $state<HelmReleaseDetail | null>(null);
+  let helmUserOnly = $state(false);
+  let revPage = $state(0);
+  let rollingBackRev = $state<number | null>(null);
   let events = $state<EventInfo[]>([]);
   let metrics = $state<Record<string, ContainerMetrics>>({});
   let yaml = $state("");
@@ -22,9 +50,14 @@
   let draft = $state("");
   let editing = $state(false);
   let loading = $state(false);
+  function defaultDrawerWidth(): number {
+    if (typeof window === "undefined") return 544;
+    return Math.min(1100, Math.max(384, Math.round((window.innerWidth / cssZoom()) * 0.4)));
+  }
+
   let saving = $state(false);
   let error = $state("");
-  let width = $state(600);
+  let width = $state(defaultDrawerWidth());
   let expandedMeta = $state<Record<string, boolean>>({});
   let revealedKeys = $state<Record<string, boolean>>({});
   let revealedVals = $state<Record<string, boolean>>({});
@@ -32,12 +65,26 @@
 
   const kk = $derived(kindKey(sel.type));
   const isPod = $derived(kk === "/Pod");
+  const isHelmRelease = $derived(kk === "helm.sh/Release");
   const canJumpOwner = $derived(kk === "/Pod" || kk === "apps/ReplicaSet" || kk === "batch/Job");
   const canForward = $derived(kk === "/Pod" || kk === "/Service");
   const canScale = $derived(scalableKinds.has(kk));
   const canRestart = $derived(restartableKinds.has(kk));
-  const activeYaml = $derived(neat ? neatYaml : yaml);
+  const activeYaml = $derived(
+    isHelmRelease
+      ? helmUserOnly
+        ? (helmDetail?.userValues ?? "")
+        : (helmDetail?.mergedValues ?? "")
+      : neat
+        ? neatYaml
+        : yaml,
+  );
   const dirty = $derived(editing && draft !== activeYaml);
+  const REV_PAGE_SIZE = 5;
+  const helmHistory = $derived(helmDetail?.history ?? []);
+  const revTotalPages = $derived(Math.max(1, Math.ceil(helmHistory.length / REV_PAGE_SIZE)));
+  const safeRevPage = $derived(Math.min(revPage, revTotalPages - 1));
+  const pagedRevisions = $derived(helmHistory.slice(safeRevPage * REV_PAGE_SIZE, (safeRevPage + 1) * REV_PAGE_SIZE));
 
   let loadSeq = 0;
 
@@ -50,6 +97,15 @@
     loading = true;
     error = "";
     try {
+      if (ref.group === "helm.sh" && ref.resource === "releases") {
+        const hd = await Kube.GetHelmRelease(ctx, ns, name);
+        if (seq !== loadSeq) return;
+        helmDetail = hd;
+        yaml = hd.userValues ?? "";
+        neatYaml = hd.mergedValues ?? "";
+        if (!editing) draft = helmUserOnly ? yaml : neatYaml;
+        return;
+      }
       const detail = await Kube.GetDetail(ctx, ref, ns, name);
       if (seq !== loadSeq) return;
       obj = (detail.object as Record<string, any>) ?? null;
@@ -66,23 +122,34 @@
     }
   }
 
+  let loadedKey = "";
+
   $effect(() => {
-    // Reload whenever the selection changes.
-    sel.name;
-    sel.namespace;
-    sel.type;
-    editing = false;
-    replicas = null;
-    obj = null;
-    events = [];
-    metrics = {};
-    yaml = "";
-    neatYaml = "";
-    draft = "";
-    expandedMeta = {};
-    revealedKeys = {};
-    revealedVals = {};
-    load();
+    // Reload only when the selected object or active cluster actually changes.
+    const key = `${app.context}\0${sel.type.group}\0${sel.type.resource}\0${sel.namespace}\0${sel.name}`;
+    if (key === loadedKey) return;
+    loadedKey = key;
+    untrack(() => {
+      editing = false;
+      replicas = null;
+      obj = null;
+      helmDetail = null;
+      rollingBackRev = null;
+      if (tab === "manifest" && !(sel.type.group === "helm.sh" && sel.type.resource === "releases")) {
+        tab = "overview";
+      }
+      events = [];
+      metrics = {};
+      yaml = "";
+      neatYaml = "";
+      draft = "";
+      expandedMeta = {};
+      revealedKeys = {};
+      revealedVals = {};
+      podPage = 0;
+      revPage = 0;
+      load();
+    });
   });
 
   function startEdit() {
@@ -125,8 +192,13 @@
   async function save() {
     saving = true;
     try {
-      await Kube.Apply(app.context, draft, sel.namespace);
-      app.toast(`${sel.type.kind} ${sel.name} applied`, "ok");
+      if (isHelmRelease) {
+        await Kube.UpgradeHelmRelease(app.context, sel.namespace, sel.name, draft);
+        app.toast(`Release ${sel.name} upgraded`, "ok");
+      } else {
+        await Kube.Update(app.context, refOf(sel.type), sel.namespace, sel.name, draft);
+        app.toast(`${sel.type.kind} ${sel.name} applied`, "ok");
+      }
       editing = false;
       await load();
     } catch (e) {
@@ -138,13 +210,34 @@
 
   async function remove() {
     const where = sel.namespace ? ` in namespace ${sel.namespace}` : "";
-    if (!(await app.confirm(`Delete ${sel.type.kind}?`, `${sel.name}${where} will be deleted.`, true))) return;
+    const verb = isHelmRelease ? "Uninstall" : "Delete";
+    if (!(await app.confirm(`${verb} ${sel.type.kind}?`, `${sel.name}${where} will be ${verb.toLowerCase()}ed.`, true))) return;
     try {
       await Kube.Delete(app.context, refOf(sel.type), sel.namespace, sel.name);
-      app.toast(`${sel.type.kind} ${sel.name} deleted`, "ok");
+      app.toast(`${sel.type.kind} ${sel.name} ${verb.toLowerCase()}ed`, "ok");
       app.selection = null;
     } catch (e) {
       app.toast(errorMessage(e), "error");
+    }
+  }
+
+  async function rollbackHelm(rev: number) {
+    if (
+      !(await app.confirm(
+        `Rollback ${sel.name}?`,
+        `Roll back release ${sel.name} in namespace ${sel.namespace} to revision ${rev}?`,
+      ))
+    )
+      return;
+    rollingBackRev = rev;
+    try {
+      await Kube.RollbackHelmRelease(app.context, sel.namespace, sel.name, rev);
+      app.toast(`Rolled back ${sel.name} to revision ${rev}`, "ok");
+      await load();
+    } catch (e) {
+      app.toast(errorMessage(e), "error");
+    } finally {
+      rollingBackRev = null;
     }
   }
 
@@ -196,13 +289,6 @@
       e.preventDefault();
       save();
     }
-    if (e.key === "Tab" && editing) {
-      e.preventDefault();
-      const ta = e.currentTarget as HTMLTextAreaElement;
-      const { selectionStart: s, selectionEnd: en } = ta;
-      draft = draft.slice(0, s) + "  " + draft.slice(en);
-      requestAnimationFrame(() => ta.setSelectionRange(s + 2, s + 2));
-    }
   }
 
   function startResize(e: PointerEvent) {
@@ -249,6 +335,144 @@
 
   const selectorEntries = $derived.by(() => buildSelectorEntries(obj));
   const containersList = $derived.by(() => buildContainersList(sel.type.kind, obj, metrics));
+
+  const POD_PAGE_SIZE = 5;
+  const podRowsMap = new Map<string, Row>();
+  const childRowsMap = new Map<string, Row>();
+  let podVersion = $state(0);
+  let podCols = $state<Column[]>([]);
+  let podLoading = $state(false);
+  let podError = $state("");
+  let podPage = $state(0);
+
+  const podsPlan = $derived.by(() => buildControlledPodsPlan(kk, obj, sel.namespace));
+  const podsPlanKey = $derived(
+    podsPlan
+      ? `${podsPlan.mode}\0${podsPlan.uid}\0${podsPlan.namespace}\0${podsPlan.labelSelector}\0${podsPlan.fieldSelector}\0${podsPlan.emptyHint}`
+      : "",
+  );
+
+  function resourceRefOrDefault(group: string, kind: string, fallback: ResourceRef): ResourceRef {
+    const hit = app.resources.find((r) => r.group === group && r.kind === kind);
+    return hit ? refOf(hit) : fallback;
+  }
+
+  $effect(() => {
+    const ctx = app.context;
+    const planKey = podsPlanKey;
+    const plan = untrack(() => podsPlan);
+    if (!ctx || !planKey || !plan || plan.emptyHint) {
+      untrack(() => {
+        podRowsMap.clear();
+        childRowsMap.clear();
+        podCols = [];
+        podError = "";
+        podLoading = false;
+        podVersion++;
+      });
+      return;
+    }
+
+    const podRef = untrack(() =>
+      resourceRefOrDefault("", "Pod", { group: "", version: "v1", resource: "pods", kind: "Pod", namespaced: true }),
+    );
+    const childRef =
+      plan.mode === "deployment"
+        ? untrack(() =>
+            resourceRefOrDefault("apps", "ReplicaSet", {
+              group: "apps",
+              version: "v1",
+              resource: "replicasets",
+              kind: "ReplicaSet",
+              namespaced: true,
+            }),
+          )
+        : plan.mode === "cronjob"
+          ? untrack(() =>
+              resourceRefOrDefault("batch", "Job", {
+                group: "batch",
+                version: "v1",
+                resource: "jobs",
+                kind: "Job",
+                namespaced: true,
+              }),
+            )
+          : null;
+
+    untrack(() => {
+      podRowsMap.clear();
+      childRowsMap.clear();
+      podCols = [];
+      podError = "";
+      podLoading = true;
+      podPage = 0;
+      podVersion++;
+    });
+
+    let podReady = false;
+    let childReady = childRef === null;
+    const syncReady = () => {
+      if (podReady && childReady) podLoading = false;
+    };
+
+    const cleanups: (() => void)[] = [];
+    const startSubWatch = (
+      ref: ResourceRef,
+      targetMap: Map<string, Row>,
+      isPodWatch: boolean,
+      labelSelector: string,
+      fieldSelector: string,
+    ) => {
+      const id = newStreamId();
+      const off = on<WatchEvent>(topics.watch(id), (ev) => {
+        if (ev.reset) {
+          targetMap.clear();
+          if (isPodWatch) {
+            if (ev.columns) podCols = ev.columns;
+            podReady = true;
+          } else {
+            childReady = true;
+          }
+          syncReady();
+        }
+        for (const r of ev.upserts ?? []) targetMap.set(r.key, r);
+        for (const k of ev.deletes ?? []) targetMap.delete(k);
+        if (ev.error) {
+          podError = ev.error;
+          podLoading = false;
+        } else if (ev.reset) {
+          podError = "";
+        }
+        podVersion++;
+      });
+      Kube.WatchFiltered(ctx, ref, plan.namespace, labelSelector, fieldSelector, id).catch((e) => {
+        podError = errorMessage(e);
+        podLoading = false;
+      });
+      cleanups.push(() => {
+        off();
+        Kube.StopWatch(id);
+      });
+    };
+
+    startSubWatch(podRef, podRowsMap, true, plan.labelSelector, plan.fieldSelector);
+    if (childRef) {
+      startSubWatch(childRef, childRowsMap, false, "", "");
+    }
+
+    return () => {
+      for (const stop of cleanups) stop();
+    };
+  });
+
+  const controlledPods = $derived.by(() => {
+    podVersion;
+    return filterControlledPods(podsPlan, podRowsMap.values(), childRowsMap.values());
+  });
+  const podColIdx = $derived.by(() => podSummaryColumns(podCols));
+  const podTotalPages = $derived(Math.max(1, Math.ceil(controlledPods.length / POD_PAGE_SIZE)));
+  const safePodPage = $derived(Math.min(podPage, podTotalPages - 1));
+  const pagedPods = $derived(controlledPods.slice(safePodPage * POD_PAGE_SIZE, (safePodPage + 1) * POD_PAGE_SIZE));
 </script>
 
 {#snippet copyBtn(value: string, id: string, label: string)}
@@ -366,10 +590,21 @@
         aria-selected={tab === "yaml"}
         class:active={tab === "yaml"}
         onclick={() => (tab = "yaml")}
-        title="View or edit raw YAML manifest"
+        title={isHelmRelease ? "View or edit Helm release values" : "View or edit raw YAML manifest"}
       >
-        YAML{dirty ? " *" : ""}
+        {isHelmRelease ? "Values" : "YAML"}{dirty ? " *" : ""}
       </button>
+      {#if isHelmRelease}
+        <button
+          role="tab"
+          aria-selected={tab === "manifest"}
+          class:active={tab === "manifest"}
+          onclick={() => (tab = "manifest")}
+          title="View rendered Kubernetes manifest for this release"
+        >
+          Manifest
+        </button>
+      {/if}
     </div>
 
     {#if canJumpOwner || owners.length > 0}
@@ -436,7 +671,13 @@
           <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
         </svg>
       </button>
-      <button class="icon" onclick={startEdit} disabled={!yaml} title={`Edit YAML (${sel.type.kind} ${sel.name})`} aria-label="Edit YAML">
+      <button
+        class="icon"
+        onclick={startEdit}
+        disabled={isHelmRelease ? !helmDetail : !yaml}
+        title={isHelmRelease ? `Edit values (${sel.name})` : `Edit YAML (${sel.type.kind} ${sel.name})`}
+        aria-label={isHelmRelease ? "Edit values" : "Edit YAML"}
+      >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7" />
           <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
@@ -444,7 +685,12 @@
           <line x1="8" y1="13" x2="10" y2="13" />
         </svg>
       </button>
-      <button class="icon danger" onclick={remove} title={`Delete (${sel.type.kind} ${sel.name})`} aria-label="Delete">
+      <button
+        class="icon danger"
+        onclick={remove}
+        title={`${isHelmRelease ? "Uninstall" : "Delete"} (${sel.type.kind} ${sel.name})`}
+        aria-label={isHelmRelease ? "Uninstall" : "Delete"}
+      >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <polyline points="3 6 5 6 21 6" />
           <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
@@ -459,7 +705,131 @@
 
   {#if tab === "overview"}
     <div class="overview">
-      {#if loading && !obj}
+      {#if isHelmRelease}
+        {#if loading && !helmDetail}
+          <p class="empty">Loading…</p>
+        {:else if helmDetail}
+          {@const fullChart = helmDetail.chartVersion ? `${helmDetail.chart}-${helmDetail.chartVersion}` : helmDetail.chart}
+          <section class="section">
+            <h4>Release info</h4>
+            <dl class="kv-grid">
+              <dt>Name</dt>
+              <dd class="val-copy">
+                {@render copyBtn(helmDetail.name, "helm:name", "release name")}
+                <span class="mono val-text">{helmDetail.name}</span>
+              </dd>
+              <dt>Namespace</dt>
+              <dd class="val-copy">
+                {@render copyBtn(helmDetail.namespace, "helm:ns", "namespace")}
+                <span class="mono val-text">{helmDetail.namespace}</span>
+              </dd>
+              <dt>Revision</dt>
+              <dd class="mono val-text">{helmDetail.revision}</dd>
+              <dt>Status</dt>
+              <dd class={`val-text tone-${toneFor(helmDetail.status)}`}>{helmDetail.status}</dd>
+              <dt>Chart</dt>
+              <dd class="val-copy">
+                {@render copyBtn(fullChart, "helm:chart", "chart")}
+                <span class="mono val-text">{fullChart || "—"}</span>
+              </dd>
+              {#if helmDetail.appVersion}
+                <dt>App version</dt>
+                <dd class="val-copy">
+                  {@render copyBtn(helmDetail.appVersion, "helm:appver", "app version")}
+                  <span class="mono val-text">{helmDetail.appVersion}</span>
+                </dd>
+              {/if}
+              {#if helmDetail.firstDeployed}
+                <dt>First deployed</dt>
+                <dd class="val-text">{age(helmDetail.firstDeployed, app.now)} ago <span class="muted">({helmDetail.firstDeployed})</span></dd>
+              {/if}
+              {#if helmDetail.lastDeployed}
+                <dt>Last deployed</dt>
+                <dd class="val-text">{age(helmDetail.lastDeployed, app.now)} ago <span class="muted">({helmDetail.lastDeployed})</span></dd>
+              {/if}
+              {#if helmDetail.description}
+                <dt>Description</dt>
+                <dd class="val-text">{helmDetail.description}</dd>
+              {/if}
+            </dl>
+          </section>
+
+          <section class="section">
+            <div class="section-head">
+              <h4>Revisions ({helmHistory.length})</h4>
+              {#if revTotalPages > 1}
+                <div class="pager">
+                  <span class="muted pager-range">
+                    {safeRevPage * REV_PAGE_SIZE + 1}–{Math.min((safeRevPage + 1) * REV_PAGE_SIZE, helmHistory.length)} of {helmHistory.length}
+                  </span>
+                  <button
+                    class="mini"
+                    disabled={safeRevPage === 0}
+                    onclick={() => (revPage = Math.max(0, safeRevPage - 1))}
+                    title="Previous revisions page"
+                  >
+                    ‹
+                  </button>
+                  <button
+                    class="mini"
+                    disabled={safeRevPage >= revTotalPages - 1}
+                    onclick={() => (revPage = Math.min(revTotalPages - 1, safeRevPage + 1))}
+                    title="Next revisions page"
+                  >
+                    ›
+                  </button>
+                </div>
+              {/if}
+            </div>
+            {#if helmHistory.length === 0}
+              <p class="muted empty-inline">No revision history.</p>
+            {:else}
+              <table class="ledger-table revisions-table">
+                <thead>
+                  <tr>
+                    <th class="col-rev-num">Rev</th>
+                    <th class="col-rev-status">Status</th>
+                    <th>Chart</th>
+                    <th class="col-rev-age">Updated</th>
+                    <th>Description</th>
+                    <th class="col-rev-act"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each pagedRevisions as h (h.revision)}
+                    <tr>
+                      <td class="col-rev-num mono val-text">{h.revision}</td>
+                      <td class={`col-rev-status val-text tone-${toneFor(h.status)}`}>{h.status}</td>
+                      <td class="mono val-text">{h.chart || "—"}</td>
+                      <td class="col-rev-age mono muted val-text">{h.updated ? age(h.updated, app.now) : "—"}</td>
+                      <td class="val-text">{h.description || "—"}</td>
+                      <td class="col-rev-act">
+                        {#if h.revision !== helmDetail.revision}
+                          <button
+                            class="mini"
+                            disabled={rollingBackRev !== null}
+                            onclick={() => rollbackHelm(h.revision)}
+                            title={`Roll back ${sel.name} to revision ${h.revision}`}
+                          >
+                            {rollingBackRev === h.revision ? "…" : "Rollback"}
+                          </button>
+                        {/if}
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            {/if}
+          </section>
+
+          {#if helmDetail.notes}
+            <section class="section">
+              <h4>Notes</h4>
+              <pre class="helm-notes mono val-text">{helmDetail.notes}</pre>
+            </section>
+          {/if}
+        {/if}
+      {:else if loading && !obj}
         <p class="empty">Loading…</p>
       {:else if obj}
         <section class="section">
@@ -744,6 +1114,101 @@
           </section>
         {/if}
 
+        {#if podsPlan}
+          <section class="section">
+            <div class="section-head">
+              <h4>Pods ({controlledPods.length})</h4>
+              {#if podTotalPages > 1}
+                <div class="pager">
+                  <span class="muted pager-range">
+                    {safePodPage * POD_PAGE_SIZE + 1}–{Math.min((safePodPage + 1) * POD_PAGE_SIZE, controlledPods.length)} of {controlledPods.length}
+                  </span>
+                  <button
+                    class="mini"
+                    disabled={safePodPage === 0}
+                    onclick={() => (podPage = Math.max(0, safePodPage - 1))}
+                    title="Previous pods page"
+                  >
+                    ‹
+                  </button>
+                  <button
+                    class="mini"
+                    disabled={safePodPage >= podTotalPages - 1}
+                    onclick={() => (podPage = Math.min(podTotalPages - 1, safePodPage + 1))}
+                    title="Next pods page"
+                  >
+                    ›
+                  </button>
+                </div>
+              {/if}
+            </div>
+            {#if podsPlan.emptyHint}
+              <p class="muted empty-inline">{podsPlan.emptyHint}</p>
+            {:else if podError}
+              <div class="banner error inline-banner">{podError}</div>
+            {:else if podLoading && controlledPods.length === 0}
+              <p class="muted empty-inline">Loading…</p>
+            {:else if controlledPods.length === 0}
+              <p class="muted empty-inline">No pods.</p>
+            {:else}
+              <table class="ledger-table pods-table">
+                <thead>
+                  <tr>
+                    <th class="col-pod-name">Name</th>
+                    <th class="col-pod-ready">Ready</th>
+                    <th class="col-pod-status">Status</th>
+                    <th class="col-pod-age">Age</th>
+                    <th class="col-pod-restarts">Restarts</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each pagedPods as p (p.key)}
+                    {@const podStatus = podColIdx.statusIdx >= 0 ? (p.cells[podColIdx.statusIdx] ?? "—") : "—"}
+                    {@const podReady = podColIdx.readyIdx >= 0 ? (p.cells[podColIdx.readyIdx] ?? "—") : "—"}
+                    {@const podRestarts = podColIdx.restartsIdx >= 0 ? (p.cells[podColIdx.restartsIdx] ?? "—") : "—"}
+                    {@const podUnready = unreadyWorkloadCells("/Pod", p.cells, {
+                      readyIdx: podColIdx.readyIdx,
+                      desiredIdx: -1,
+                      completionsIdx: -1,
+                      statusIdx: podColIdx.statusIdx,
+                    }).ready}
+                    <tr
+                      class="pod-row"
+                      onclick={() => {
+                        if (!window.getSelection()?.toString()) {
+                          app.jumpToResource({ kind: "Pod", name: p.name }, p.namespace);
+                        }
+                      }}
+                    >
+                      <td class="col-pod-name">
+                        <button
+                          class="pod-link mono val-text"
+                          onclick={(e) => {
+                            e.stopPropagation();
+                            if (!window.getSelection()?.toString()) {
+                              app.jumpToResource({ kind: "Pod", name: p.name }, p.namespace);
+                            }
+                          }}
+                          title={`Open Pod ${p.namespace ? `${p.namespace}/` : ""}${p.name}`}
+                        >
+                          {p.name}
+                        </button>
+                        {#if podsPlan.mode === "node" && p.namespace}
+                          <div class="mono muted pod-ns val-text">{p.namespace}</div>
+                        {/if}
+                      </td>
+                      <td class="col-pod-ready mono val-text" class:tone-warn={podUnready}>{podReady}</td>
+                      <td class={`col-pod-status val-text tone-${toneFor(podStatus)}`}>{podStatus}</td>
+                      <td class="col-pod-age mono muted val-text">{p.created ? age(p.created, app.now) : "—"}</td>
+                      <td class="col-pod-restarts mono val-text">{podRestarts}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            {/if}
+          </section>
+        {/if}
+
         <section class="section">
           <h4>Events ({events.length})</h4>
           {#if events.length === 0}
@@ -781,25 +1246,42 @@
         </section>
       {/if}
     </div>
+  {:else if tab === "manifest" && isHelmRelease}
+    <div class="yaml-bar">
+      <span class="muted yaml-hint">Rendered manifest (revision {helmDetail?.revision ?? "—"})</span>
+      <span class="grow"></span>
+      {@render copyBtn(helmDetail?.manifest ?? "", "helm:manifest", "rendered manifest")}
+    </div>
+    <YamlEditor readonly value={helmDetail?.manifest ?? ""} placeholder={loading ? "Loading…" : "No manifest."} />
   {:else}
     <div class="yaml-bar">
-      <label class="neat-toggle">
-        <input type="checkbox" bind:checked={neat} disabled={editing} />
-        Neat
-      </label>
+      {#if isHelmRelease}
+        <label class="neat-toggle">
+          <input type="checkbox" bind:checked={helmUserOnly} disabled={editing} />
+          User values
+        </label>
+      {:else}
+        <label class="neat-toggle">
+          <input type="checkbox" bind:checked={neat} disabled={editing} />
+          Neat
+        </label>
+      {/if}
       <span class="grow"></span>
-      {@render copyBtn(editing ? draft : activeYaml, "yaml:doc", neat ? "neated YAML" : "raw YAML")}
+      {@render copyBtn(
+        editing ? draft : activeYaml,
+        "yaml:doc",
+        isHelmRelease ? (helmUserOnly ? "user values" : "merged values") : neat ? "neated YAML" : "raw YAML",
+      )}
     </div>
-    <textarea
-      class="yaml"
-      class:editing
-      spellcheck="false"
-      readonly={!editing}
-      value={editing ? draft : activeYaml}
-      oninput={(e) => (draft = e.currentTarget.value)}
-      onkeydown={onKey}
-      placeholder={loading ? "Loading…" : ""}
-    ></textarea>
+    {#if editing}
+      <YamlEditor bind:value={draft} onkeydown={onKey} placeholder={loading ? "Loading…" : ""} />
+    {:else}
+      <YamlEditor
+        readonly
+        value={activeYaml}
+        placeholder={loading ? "Loading…" : isHelmRelease ? "# No user-supplied values" : ""}
+      />
+    {/if}
   {/if}
 </aside>
 
@@ -1246,26 +1728,125 @@
     margin-top: var(--space-1);
     font-size: 11px;
   }
+  .section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
+  }
+  .section-head h4 {
+    margin: 0;
+  }
+  .pager {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+  .pager-range {
+    margin-right: var(--space-1);
+  }
+  .pods-table {
+    table-layout: fixed;
+  }
+  .pods-table .col-pod-name {
+    min-width: 0;
+  }
+  .pods-table .col-pod-ready {
+    width: 50px;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .pods-table .col-pod-status {
+    width: 92px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pods-table .col-pod-age {
+    width: 44px;
+    text-align: right;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .pods-table .col-pod-restarts {
+    width: 60px;
+    text-align: right;
+    padding-right: 0;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .pods-table tbody tr.pod-row {
+    cursor: pointer;
+  }
+  .pods-table tbody tr.pod-row:hover {
+    background: var(--hover);
+  }
+  .pod-link {
+    all: unset;
+    display: block;
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--accent);
+    cursor: pointer;
+  }
+  .pod-link:hover {
+    text-decoration: underline;
+  }
+  .pod-link:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: 1px;
+    border-radius: 2px;
+  }
+  .pod-ns {
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .yaml-hint {
+    font-size: 12px;
+  }
+  .revisions-table .col-rev-num {
+    width: 44px;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .revisions-table .col-rev-status {
+    width: 88px;
+    white-space: nowrap;
+  }
+  .revisions-table .col-rev-age {
+    width: 60px;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .revisions-table .col-rev-act {
+    width: 72px;
+    text-align: right;
+    padding-right: 0;
+    white-space: nowrap;
+  }
+  .helm-notes {
+    margin: 0;
+    padding: var(--space-2);
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 16px;
+  }
+  .inline-banner {
+    margin: 0;
+  }
   .empty,
   .empty-inline {
     margin: 0;
-  }
-  .yaml {
-    flex: 1;
-    resize: none;
-    border: 0;
-    border-radius: 0;
-    padding: var(--space-3);
-    font-family: var(--mono);
-    font-size: 12px;
-    line-height: 16px;
-    background: var(--code-bg);
-    color: var(--text);
-    tab-size: 2;
-    white-space: pre;
-  }
-  .yaml.editing {
-    box-shadow: inset 2px 0 0 var(--accent);
   }
   .banner {
     margin: var(--space-2) var(--space-3);

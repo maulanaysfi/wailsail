@@ -22,7 +22,7 @@ func TestLiveCluster(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 	pods := ResourceRef{Version: "v1", Resource: "pods", Kind: "Pod", Namespaced: true}
-	tbl, err := c.listTable(ctx, pods, "")
+	tbl, err := c.listTable(ctx, pods, "", watchOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +33,7 @@ func TestLiveCluster(t *testing.T) {
 	got := 0
 	wctx, wcancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer wcancel()
-	c.runWatch(wctx, pods, "", func(ev WatchEvent) {
+	c.runWatch(wctx, pods, "", watchOptions{}, func(ev WatchEvent) {
 		got++
 		t.Logf("event reset=%v upserts=%d deletes=%d err=%q", ev.Reset, len(ev.Upserts), len(ev.Deletes), ev.Error)
 	})

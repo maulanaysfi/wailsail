@@ -160,6 +160,17 @@ func (s *Service) APIResources(contextName string) ([]ResourceType, error) {
 			})
 		}
 	}
+	out = append(out, ResourceType{
+		ResourceRef: ResourceRef{
+			Group:      HelmGroup,
+			Version:    HelmVersion,
+			Resource:   HelmResource,
+			Kind:       HelmKind,
+			Namespaced: true,
+		},
+		ShortNames: []string{"helm", "hr"},
+		Verbs:      []string{"get", "list", "watch", "update", "delete"},
+	})
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Group != out[j].Group {
 			return out[i].Group < out[j].Group
@@ -193,6 +204,19 @@ func WatchTopic(id string) string { return "wailsail:watch:" + id }
 // watches all namespaces. Pass a caller-generated streamID so the frontend
 // can subscribe before the first event is emitted.
 func (s *Service) Watch(contextName string, ref ResourceRef, namespace string, streamID string) (string, error) {
+	return s.startWatch(contextName, ref, namespace, watchOptions{}, streamID)
+}
+
+// WatchFiltered starts a live table watch scoped by optional Kubernetes
+// labelSelector and fieldSelector query filters.
+func (s *Service) WatchFiltered(contextName string, ref ResourceRef, namespace, labelSelector, fieldSelector, streamID string) (string, error) {
+	return s.startWatch(contextName, ref, namespace, watchOptions{
+		labelSelector: labelSelector,
+		fieldSelector: fieldSelector,
+	}, streamID)
+}
+
+func (s *Service) startWatch(contextName string, ref ResourceRef, namespace string, opts watchOptions, streamID string) (string, error) {
 	c, err := s.mgr.For(contextName)
 	if err != nil {
 		return "", err
@@ -201,7 +225,7 @@ func (s *Service) Watch(contextName string, ref ResourceRef, namespace string, s
 	topic := WatchTopic(id)
 	go func() {
 		defer done()
-		c.runWatch(ctx, ref, namespace, func(ev WatchEvent) { s.emit(topic, ev) })
+		c.runWatch(ctx, ref, namespace, opts, func(ev WatchEvent) { s.emit(topic, ev) })
 	}()
 	return id, nil
 }
@@ -531,41 +555,94 @@ func (s *Service) Apply(contextName string, manifest string, defaultNamespace st
 	}
 	var results []ApplyResult
 	for _, obj := range objs {
-		gvk := obj.GroupVersionKind()
-		mapping, err := c.Mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
-		if err != nil {
-			c.Mapper.Reset()
-			if mapping, err = c.Mapper.RESTMapping(gvk.GroupKind(), gvk.Version); err != nil {
-				return results, fmt.Errorf("%s: %w", gvk.Kind, err)
-			}
-		}
-		namespaced := mapping.Scope.Name() == "namespace"
-		if namespaced && obj.GetNamespace() == "" {
-			ns := defaultNamespace
-			if ns == "" {
-				ns = c.DefaultNS
-			}
-			obj.SetNamespace(ns)
-		}
-		if !namespaced {
-			obj.SetNamespace("")
-		}
-		PrepareForApply(obj)
-		data, err := json.Marshal(obj.Object)
+		res, err := s.applyObject(c, obj, defaultNamespace)
 		if err != nil {
 			return results, err
 		}
-		ref := ResourceRef{Group: mapping.Resource.Group, Version: mapping.Resource.Version,
-			Resource: mapping.Resource.Resource, Kind: gvk.Kind, Namespaced: namespaced}
-		force := true
-		_, err = s.resourceClient(c, ref, obj.GetNamespace()).Patch(s.baseCtx, obj.GetName(),
-			types.ApplyPatchType, data, metav1.PatchOptions{FieldManager: FieldManager, Force: &force})
-		if err != nil {
-			return results, fmt.Errorf("%s %s: %w", gvk.Kind, obj.GetName(), err)
-		}
-		results = append(results, ApplyResult{Kind: gvk.Kind, Namespace: obj.GetNamespace(), Name: obj.GetName()})
+		results = append(results, res)
 	}
 	return results, nil
+}
+
+// Update server-side-applies edits to an existing selected object, rejecting
+// changes to immutable resource identity fields (kind, API group, name, namespace).
+func (s *Service) Update(contextName string, ref ResourceRef, namespace, name, manifest string) (ApplyResult, error) {
+	c, err := s.mgr.For(contextName)
+	if err != nil {
+		return ApplyResult{}, err
+	}
+	objs, err := DecodeManifest(manifest)
+	if err != nil {
+		return ApplyResult{}, err
+	}
+	if len(objs) == 0 {
+		return ApplyResult{}, errors.New("manifest contains no objects")
+	}
+	if len(objs) > 1 {
+		return ApplyResult{}, errors.New("editing a resource requires a single object manifest")
+	}
+	if err := validateUpdateTarget(objs[0], ref, namespace, name); err != nil {
+		return ApplyResult{}, err
+	}
+	return s.applyObject(c, objs[0], namespace)
+}
+
+func validateUpdateTarget(obj *unstructured.Unstructured, ref ResourceRef, expectedNamespace, expectedName string) error {
+	gvk := obj.GroupVersionKind()
+	if gvk.Kind != ref.Kind {
+		return fmt.Errorf("%s %q is invalid: kind: Invalid value: %q: field is immutable", ref.Kind, expectedName, gvk.Kind)
+	}
+	if gvk.Group != ref.Group {
+		return fmt.Errorf("%s %q is invalid: apiVersion: Invalid value: %q: field is immutable", ref.Kind, expectedName, obj.GetAPIVersion())
+	}
+	if obj.GetName() != expectedName {
+		return fmt.Errorf("%s %q is invalid: metadata.name: Invalid value: %q: field is immutable", ref.Kind, expectedName, obj.GetName())
+	}
+	ns := obj.GetNamespace()
+	if ref.Namespaced {
+		if ns != "" && ns != expectedNamespace {
+			return fmt.Errorf("%s %q is invalid: metadata.namespace: Invalid value: %q: field is immutable", ref.Kind, expectedName, ns)
+		}
+	} else if ns != "" {
+		return fmt.Errorf("%s %q is invalid: metadata.namespace: Invalid value: %q: field is immutable", ref.Kind, expectedName, ns)
+	}
+	return nil
+}
+
+func (s *Service) applyObject(c *Clients, obj *unstructured.Unstructured, defaultNamespace string) (ApplyResult, error) {
+	gvk := obj.GroupVersionKind()
+	mapping, err := c.Mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
+	if err != nil {
+		c.Mapper.Reset()
+		if mapping, err = c.Mapper.RESTMapping(gvk.GroupKind(), gvk.Version); err != nil {
+			return ApplyResult{}, fmt.Errorf("%s: %w", gvk.Kind, err)
+		}
+	}
+	namespaced := mapping.Scope.Name() == "namespace"
+	if namespaced && obj.GetNamespace() == "" {
+		ns := defaultNamespace
+		if ns == "" {
+			ns = c.DefaultNS
+		}
+		obj.SetNamespace(ns)
+	}
+	if !namespaced {
+		obj.SetNamespace("")
+	}
+	PrepareForApply(obj)
+	data, err := json.Marshal(obj.Object)
+	if err != nil {
+		return ApplyResult{}, err
+	}
+	ref := ResourceRef{Group: mapping.Resource.Group, Version: mapping.Resource.Version,
+		Resource: mapping.Resource.Resource, Kind: gvk.Kind, Namespaced: namespaced}
+	force := true
+	_, err = s.resourceClient(c, ref, obj.GetNamespace()).Patch(s.baseCtx, obj.GetName(),
+		types.ApplyPatchType, data, metav1.PatchOptions{FieldManager: FieldManager, Force: &force})
+	if err != nil {
+		return ApplyResult{}, fmt.Errorf("%s %s: %w", gvk.Kind, obj.GetName(), err)
+	}
+	return ApplyResult{Kind: gvk.Kind, Namespace: obj.GetNamespace(), Name: obj.GetName()}, nil
 }
 
 // PrepareForApply removes fields that server-side apply rejects or that
@@ -630,6 +707,9 @@ func validateObject(u *unstructured.Unstructured) error {
 
 // Delete deletes an object with background propagation.
 func (s *Service) Delete(contextName string, ref ResourceRef, namespace, name string) error {
+	if isHelmReleaseRef(ref) {
+		return s.UninstallHelmRelease(contextName, namespace, name)
+	}
 	c, err := s.mgr.For(contextName)
 	if err != nil {
 		return err

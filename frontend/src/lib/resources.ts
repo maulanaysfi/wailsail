@@ -21,6 +21,10 @@ const sections: { name: string; kinds: string[] }[] = [
     ],
   },
   {
+    name: "Helm",
+    kinds: ["helm.sh/Release"],
+  },
+  {
     name: "Workloads",
     kinds: [
       "/Pod",
@@ -75,12 +79,13 @@ const sections: { name: string; kinds: string[] }[] = [
   },
 ];
 
-export const defaultExpandedGroups = new Set(["Cluster", "Workloads", "Network", "Storage", "Config"]);
+export const defaultExpandedGroups = new Set(["Cluster", "Helm", "Workloads", "Network", "Storage", "Config"]);
 
 // Built-in Kubernetes API groups (non-CRD).
 const nativeGroups = new Set([
   "",
   "core",
+  "helm.sh",
   "apps",
   "batch",
   "autoscaling",

@@ -1,6 +1,9 @@
 package kube
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/rest"
 )
 
 const podTable = `{
@@ -217,15 +221,15 @@ func TestParseTableOwnerAndPodResources(t *testing.T) {
 	"columnDefinitions":[{"name":"Name","type":"string","priority":0}],
 	"rows":[{"cells":["web-1"],
 	"object":{"kind":"Pod","metadata":{"name":"web-1","namespace":"prod","uid":"u-1",
-	"ownerReferences":[{"apiVersion":"apps/v1","kind":"ReplicaSet","name":"web-rs","controller":true}]},
+	"ownerReferences":[{"apiVersion":"apps/v1","kind":"ReplicaSet","name":"web-rs","uid":"rs-1","controller":true}]},
 	"spec":{"containers":[{"name":"app","resources":{"requests":{"cpu":"250m","memory":"128Mi"},"limits":{"cpu":"500m","memory":"256Mi"}}},{"name":"sidecar","resources":{"requests":{"cpu":"50m"}}}]}}}]}`)
 	res, err := parseTable(raw, nil)
 	if err != nil || len(res.Rows) != 1 {
 		t.Fatalf("parseTable: %v %+v", err, res)
 	}
 	r := res.Rows[0]
-	if r.Owner == nil || r.Owner.Kind != "ReplicaSet" || r.Owner.Name != "web-rs" {
-		t.Fatalf("expected owner ReplicaSet/web-rs, got %+v", r.Owner)
+	if r.Owner == nil || r.Owner.Kind != "ReplicaSet" || r.Owner.Name != "web-rs" || r.Owner.UID != "rs-1" {
+		t.Fatalf("expected owner ReplicaSet/web-rs (rs-1), got %+v", r.Owner)
 	}
 	if r.PodResources == nil || r.PodResources.Container != "app" || r.PodResources.CPURequest != "250m" || r.PodResources.MemoryLimit != "256Mi" {
 		t.Fatalf("expected main container podResources, got %+v", r.PodResources)
@@ -288,5 +292,74 @@ func TestNeatObject(t *testing.T) {
 		if !strings.Contains(out, keep) {
 			t.Fatalf("expected %q preserved in neat YAML:\n%s", keep, out)
 		}
+	}
+}
+
+func TestListTableWithSelectors(t *testing.T) {
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(podTable))
+	}))
+	defer srv.Close()
+
+	c := &Clients{Config: &rest.Config{Host: srv.URL}, HTTP: srv.Client()}
+	ref := ResourceRef{Version: "v1", Resource: "pods", Kind: "Pod", Namespaced: true}
+	opts := watchOptions{labelSelector: "app=web", fieldSelector: "spec.nodeName=node-1"}
+	res, err := c.listTable(context.Background(), ref, "prod", opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(res.Rows))
+	}
+	for _, want := range []string{"labelSelector=app%3Dweb", "fieldSelector=spec.nodeName%3Dnode-1", "includeObject=Object"} {
+		if !strings.Contains(gotQuery, want) {
+			t.Fatalf("query %q missing %q", gotQuery, want)
+		}
+	}
+}
+
+func TestValidateUpdateTarget(t *testing.T) {
+	ref := ResourceRef{Group: "apps", Version: "v1", Resource: "deployments", Kind: "Deployment", Namespaced: true}
+	makeObj := func(apiVersion, kind, ns, name string) *unstructured.Unstructured {
+		meta := map[string]any{"name": name}
+		if ns != "" {
+			meta["namespace"] = ns
+		}
+		return &unstructured.Unstructured{Object: map[string]any{
+			"apiVersion": apiVersion,
+			"kind":       kind,
+			"metadata":   meta,
+		}}
+	}
+
+	if err := validateUpdateTarget(makeObj("apps/v1", "Deployment", "prod", "web"), ref, "prod", "web"); err != nil {
+		t.Fatalf("matching target failed: %v", err)
+	}
+	if err := validateUpdateTarget(makeObj("apps/v1", "Deployment", "", "web"), ref, "prod", "web"); err != nil {
+		t.Fatalf("omitted namespace on same object should default cleanly, got: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		obj  *unstructured.Unstructured
+		want string
+	}{
+		{"renamed", makeObj("apps/v1", "Deployment", "prod", "web-2"), "metadata.name"},
+		{"re-namespaced", makeObj("apps/v1", "Deployment", "staging", "web"), "metadata.namespace"},
+		{"wrong kind", makeObj("apps/v1", "StatefulSet", "prod", "web"), "kind"},
+		{"wrong group", makeObj("v1", "Deployment", "prod", "web"), "apiVersion"},
+	} {
+		err := validateUpdateTarget(tc.obj, ref, "prod", "web")
+		if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "field is immutable") {
+			t.Fatalf("%s: expected immutable error mentioning %q, got %v", tc.name, tc.want, err)
+		}
+	}
+
+	nsRef := ResourceRef{Group: "", Version: "v1", Resource: "namespaces", Kind: "Namespace", Namespaced: false}
+	if err := validateUpdateTarget(makeObj("v1", "Namespace", "extra", "prod"), nsRef, "", "prod"); err == nil {
+		t.Fatal("expected cluster-scoped object with namespace to be rejected")
 	}
 }
