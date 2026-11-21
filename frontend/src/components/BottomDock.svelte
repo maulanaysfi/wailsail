@@ -1,9 +1,13 @@
 <script lang="ts">
   import { app, cssZoom } from "../lib/store.svelte";
   import LogViewer from "./LogViewer.svelte";
-  import TerminalView from "./TerminalView.svelte";
 
   let height = $state(320);
+  let terminalPromise: Promise<typeof import("./TerminalView.svelte")> | null = null;
+
+  function loadTerminalView() {
+    return (terminalPromise ??= import("./TerminalView.svelte"));
+  }
 
   function startResize(e: PointerEvent) {
     const z = cssZoom();
@@ -90,13 +94,20 @@
           onStatus={(s) => app.setDockStatus(t.id, s)}
         />
       {:else}
-        <TerminalView
-          context={t.context}
-          namespace={t.namespace}
-          pod={t.pod}
-          initialContainer={t.container}
-          onStatus={(s) => app.setDockStatus(t.id, s)}
-        />
+        {#await loadTerminalView()}
+          <p class="muted loading-term">Loading terminal…</p>
+        {:then mod}
+          {@const TerminalView = mod.default}
+          <TerminalView
+            context={t.context}
+            namespace={t.namespace}
+            pod={t.pod}
+            initialContainer={t.container}
+            onStatus={(s) => app.setDockStatus(t.id, s)}
+          />
+        {:catch err}
+          <div class="banner error loading-err">Failed to load terminal: {String(err)}</div>
+        {/await}
       {/if}
     </div>
   {/each}
@@ -208,5 +219,9 @@
   }
   .body.hidden {
     display: none;
+  }
+  .loading-term,
+  .loading-err {
+    margin: var(--space-3);
   }
 </style>
