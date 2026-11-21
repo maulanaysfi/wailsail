@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Resource Meter Fill Clipping**: Added an inner rounded `.meter-clip` container inside `.meter-track` (`style.css`, `ResourceTable.svelte`, `DetailDrawer.svelte`) so low-percentage usage fills render as a partial circle clipped to the pill track instead of a flat vertical line while keeping `.meter-req-mark` extending 2px above and below the bar.
+
 ## [0.2.0-beta] - 2026-11-21
 
 ### Added

@@ -545,7 +545,9 @@
   <div class="meter-box">
     {#if meter.showBar}
       <div class="meter-track" title={meter.hoverText}>
-        <div class={`meter-fill tone-bg-${meter.tone}`} style={`width:${meter.usedPct}%`}></div>
+        <div class="meter-clip">
+          <div class={`meter-fill tone-bg-${meter.tone}`} style={`width:${meter.usedPct}%`}></div>
+        </div>
         {#if meter.requestMarkPct !== null}
           <span class="meter-req-mark" class:warn={meter.requestMarkWarn} style={`left:${meter.requestMarkPct}%`}></span>
         {/if}
