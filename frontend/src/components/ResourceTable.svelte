@@ -41,12 +41,16 @@
   let fontGen = $state(0);
 
   $effect(() => {
-    if (typeof document !== "undefined" && document.fonts?.ready) {
-      document.fonts.ready.then(() => {
-        clearMeasureTextCache();
-        fontGen++;
-      });
-    }
+    if (typeof document === "undefined" || !document.fonts) return;
+    const invalidate = () => {
+      clearMeasureTextCache();
+      fontGen++;
+    };
+    document.fonts.ready.then(invalidate);
+    document.fonts.addEventListener?.("loadingdone", invalidate);
+    return () => {
+      document.fonts.removeEventListener?.("loadingdone", invalidate);
+    };
   });
 
   const allNamespaces = $derived(!!app.current?.namespaced && app.namespace === "");
@@ -141,7 +145,7 @@
     podMetrics;
     fontGen;
     if (!isPod) return { cpu: 0, memory: 0 };
-    const font = '12px "Google Sans Flex", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    const font = '12px "Google Sans Flex", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     let cpu = 0;
     let memory = 0;
     for (const r of rows.values()) {
@@ -683,7 +687,7 @@
   }
   .cell-meter {
     display: grid;
-    grid-template-columns: minmax(var(--text-w, auto), max-content) minmax(48px, 1fr);
+    grid-template-columns: var(--text-w, auto) minmax(48px, 1fr);
     align-items: center;
     gap: var(--space-2);
   }

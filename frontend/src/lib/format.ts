@@ -232,12 +232,16 @@ export function measureTextWidth(text: string, font: string, tabular = false): n
     if (!measureSpan) {
       measureSpan = document.createElement("span");
       measureSpan.style.cssText =
-        "position:fixed;left:-9999px;top:-9999px;visibility:hidden;pointer-events:none;white-space:nowrap;font-variant-numeric:tabular-nums;";
+        "position:fixed;left:-9999px;top:-9999px;visibility:hidden;pointer-events:none;white-space:nowrap;";
       document.body.appendChild(measureSpan);
     }
     measureSpan.style.font = font;
+    // Set after `style.font` because the CSS `font` shorthand resets font-variant-numeric.
+    measureSpan.style.fontVariantNumeric = "tabular-nums";
     measureSpan.textContent = text;
-    width = Math.ceil(measureSpan.getBoundingClientRect().width);
+    const rawZoom = parseFloat(document.documentElement.style.zoom || "");
+    const zoom = Number.isFinite(rawZoom) && rawZoom > 0 ? rawZoom : 1;
+    width = Math.ceil(measureSpan.getBoundingClientRect().width / zoom);
   } else {
     if (measureCtx === undefined && typeof document !== "undefined") {
       measureCtx = document.createElement("canvas").getContext("2d");
