@@ -170,11 +170,11 @@
     if (index === 0 || n === "name") return 240;
     if (n === "namespace") return 136;
     if (n === "cpu usage" || n === "memory usage") return 168;
-    if (n === "ready" || n === "restarts" || n === "age" || n === "desired" || n === "current" || n === "up-to-date" || n === "available") return 88;
-    if (n === "status" || n === "phase" || n === "type" || n === "roles") return 120;
+    if (n === "ready" || n === "restarts" || n === "age" || n === "revision" || n === "desired" || n === "current" || n === "up-to-date" || n === "available") return 88;
+    if (n === "status" || n === "phase" || n === "type" || n === "roles" || n === "app version") return 120;
     if (n === "ip" || n === "cluster-ip" || n === "external-ip" || n === "internal-ip") return 136;
     if (n === "node" || n === "nominated node") return 168;
-    if (n === "containers" || n === "images" || n === "selector" || n === "ports") return 200;
+    if (n === "containers" || n === "images" || n === "selector" || n === "ports" || n === "chart") return 200;
     return 144;
   }
 

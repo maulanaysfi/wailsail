@@ -94,6 +94,10 @@ flowchart LR
   - `Scale(contextName string, ref ResourceRef, namespace, name string, replicas int32) error`
   - `Restart(contextName string, ref ResourceRef, namespace, name string) error`
   - `PodContainers(contextName, namespace, pod string) ([]ContainerInfo, error)`
+  - `GetHelmRelease(contextName, namespace, name string) (HelmReleaseDetail, error)` — decodes `sh.helm.release.v1` Secrets into release metadata, user/merged values, rendered manifest, and revision history
+  - `RollbackHelmRelease(contextName, namespace, name string, revision int) error` — reconciles target revision manifest via Server-Side Apply and records revision `v<N+1>`
+  - `UpgradeHelmRelease(contextName, namespace, name, valuesYAML string) error` — re-renders embedded chart templates against edited values, reconciles resources via Server-Side Apply, and records revision `v<N+1>`
+  - `UninstallHelmRelease(contextName, namespace, name string) error` — deletes managed manifest resources and release history Secrets
 
 ### `internal/logs`
 - `Service`: `Start(contextName, namespace, pod string, opts Options, streamID string) (string, error)` and `Stop(streamID string)`.

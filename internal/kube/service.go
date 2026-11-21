@@ -160,6 +160,17 @@ func (s *Service) APIResources(contextName string) ([]ResourceType, error) {
 			})
 		}
 	}
+	out = append(out, ResourceType{
+		ResourceRef: ResourceRef{
+			Group:      HelmGroup,
+			Version:    HelmVersion,
+			Resource:   HelmResource,
+			Kind:       HelmKind,
+			Namespaced: true,
+		},
+		ShortNames: []string{"helm", "hr"},
+		Verbs:      []string{"get", "list", "watch", "update", "delete"},
+	})
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Group != out[j].Group {
 			return out[i].Group < out[j].Group
@@ -696,6 +707,9 @@ func validateObject(u *unstructured.Unstructured) error {
 
 // Delete deletes an object with background propagation.
 func (s *Service) Delete(contextName string, ref ResourceRef, namespace, name string) error {
+	if isHelmReleaseRef(ref) {
+		return s.UninstallHelmRelease(contextName, namespace, name)
+	}
 	c, err := s.mgr.For(contextName)
 	if err != nil {
 		return err

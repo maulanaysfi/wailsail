@@ -16,6 +16,8 @@ export type {
   ObjectDetail,
   EventInfo,
   ContainerMetrics,
+  HelmReleaseDetail,
+  HelmRevisionInfo,
 } from "../../bindings/wailsail/internal/kube";
 export type { Forward, Request as ForwardRequest } from "../../bindings/wailsail/internal/portforward";
 export type { Settings as SettingsData } from "../../bindings/wailsail/internal/settings";

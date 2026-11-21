@@ -8,7 +8,9 @@ import {
   decodeBase64Text,
   maskSecretKey,
   measureTextWidth,
+  toneFor,
 } from "../src/lib/format.ts";
+import { groupResources } from "../src/lib/resources.ts";
 import {
   buildContainersList,
   buildControlledPodsPlan,
@@ -253,4 +255,21 @@ test("unreadyWorkloadCells highlights expected columns and respects 0/0, Complet
   assert.deepEqual(unreadyWorkloadCells("batch/Job", ["j", "Running", "0/1"], jobCols), { name: true, ready: false, completions: true });
   assert.deepEqual(unreadyWorkloadCells("batch/Job", ["j", "Failed", "0/1"], jobCols), { name: true, ready: false, completions: true });
   assert.deepEqual(unreadyWorkloadCells("batch/Job", ["j", "Complete", "1/1"], jobCols), { name: false, ready: false, completions: false });
+});
+
+test("groupResources places Helm section right after Cluster and toneFor maps Helm statuses", () => {
+  const groups = groupResources([
+    { group: "", version: "v1", resource: "nodes", kind: "Node", namespaced: false },
+    { group: "helm.sh", version: "v1", resource: "releases", kind: "Release", namespaced: true },
+    { group: "", version: "v1", resource: "pods", kind: "Pod", namespaced: true },
+  ]);
+  assert.deepEqual(
+    groups.map((g) => g.name),
+    ["Cluster", "Helm", "Workloads"],
+  );
+  assert.equal(groups[1].items[0].kind, "Release");
+  assert.equal(toneFor("deployed"), "ok");
+  assert.equal(toneFor("superseded"), "muted");
+  assert.equal(toneFor("pending-upgrade"), "warn");
+  assert.equal(toneFor("failed"), "bad");
 });

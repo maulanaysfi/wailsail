@@ -13,6 +13,8 @@ export type {
     ContainerPort,
     ContextInfo,
     EventInfo,
+    HelmReleaseDetail,
+    HelmRevisionInfo,
     ObjectDetail,
     ResourceRef,
     ResourceType

@@ -6,7 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.2.0-beta] - 2026-11-21
+
 ### Added
+- **Helm Release Support (`internal/kube/helm.go`, `DetailDrawer`, `Sidebar`)**:
+  - Added a `Helm` (`Release`) menu section placed right after `Cluster` in the sidebar, streaming live deduplicated latest-revision releases (`Name`, `Revision`, `Status`, `Chart`, `App Version`, `Age`) from in-cluster `sh.helm.release.v1` Secrets without adding external Helm SDK dependencies.
+  - Added `DetailDrawer` support for Helm releases with `Overview` (release metadata, chart/app versions, deployment timestamps, notes, and a `Revisions` history table with one-click **Rollback**), `Values` (toggleable radio between **User values** and **Merged values**, plus live YAML editing & **Apply** to re-render templates and upgrade the release to revision `v<N+1>`), `Manifest` (syntax-highlighted rendered Kubernetes manifest), and **Uninstall** (deleting managed resources and release history).
 - **Zero-Dependency YAML Syntax Highlighting (`YamlEditor`, `yamlHighlight.ts`)**: Added lightweight YAML syntax highlighting for read-only viewing and live overlay editing in both `DetailDrawer` and `ApplyModal`, with matching Dark and Light theme tokens in `frontend/public/style.css`.
 - **Controlled Pods List in `DetailDrawer`**: Added a live-watching, paginated (`5` rows per page) `Pods` summary table (`Name`, `Ready`, `Status`, `Age`, `Restarts`, click a row to inspect that Pod) above `Events` for workload controllers (`Deployment` tracking both old and new `ReplicaSet`s during rollouts until old `ReplicaSet` pods terminate, `ReplicaSet`, `StatefulSet`, `DaemonSet`, `Job`, `CronJob`), `Service` (via `spec.selector`), `Node` (via `spec.nodeName` field selector), and `Namespace` (Pods in that namespace).
 - **Filtered Table Watches, Immutable Edit Guard & Owner UID (`internal/kube`)**: Added `Service.WatchFiltered` (`labelSelector` / `fieldSelector` query support), `Service.Update` (blocking changes to immutable identity fields `kind`, `apiVersion` group, `metadata.name`, and `metadata.namespace` when editing from `DetailDrawer`), and `OwnerRef.UID` on `Row` metadata.

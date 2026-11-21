@@ -61,6 +61,14 @@ export function GetDetail(contextName: string, ref: $models.ResourceRef, $namesp
 }
 
 /**
+ * GetHelmRelease returns the detail, user/merged values, rendered manifest,
+ * and revision history for a Helm release.
+ */
+export function GetHelmRelease(contextName: string, $namespace: string, name: string): $CancellablePromise<$models.HelmReleaseDetail> {
+    return $Call.ByID(2314542503, contextName, $namespace, name);
+}
+
+/**
  * Namespaces lists namespace names. When listing is forbidden it falls back
  * to the context's default namespace.
  */
@@ -100,6 +108,14 @@ export function Restart(contextName: string, ref: $models.ResourceRef, $namespac
 }
 
 /**
+ * RollbackHelmRelease rolls a Helm release back to a previous revision by
+ * reconciling its rendered manifest and recording revision v<latest+1>.
+ */
+export function RollbackHelmRelease(contextName: string, $namespace: string, name: string, revision: number): $CancellablePromise<void> {
+    return $Call.ByID(3411818523, contextName, $namespace, name, revision);
+}
+
+/**
  * Scale sets spec.replicas through the scale subresource.
  */
 export function Scale(contextName: string, ref: $models.ResourceRef, $namespace: string, name: string, replicas: number): $CancellablePromise<void> {
@@ -130,11 +146,28 @@ export function StopWatch(streamID: string): $CancellablePromise<void> {
 }
 
 /**
+ * UninstallHelmRelease deletes all Kubernetes objects managed by the release's
+ * latest manifest and removes its release history Secrets.
+ */
+export function UninstallHelmRelease(contextName: string, $namespace: string, name: string): $CancellablePromise<void> {
+    return $Call.ByID(3593418681, contextName, $namespace, name);
+}
+
+/**
  * Update server-side-applies edits to an existing selected object, rejecting
  * changes to immutable resource identity fields (kind, API group, name, namespace).
  */
 export function Update(contextName: string, ref: $models.ResourceRef, $namespace: string, name: string, manifest: string): $CancellablePromise<$models.ApplyResult> {
     return $Call.ByID(3635064223, contextName, ref, $namespace, name, manifest);
+}
+
+/**
+ * UpgradeHelmRelease re-renders the release's chart templates with edited YAML
+ * values, reconciles the cluster resources via Server-Side Apply, and records
+ * revision v<latest+1>.
+ */
+export function UpgradeHelmRelease(contextName: string, $namespace: string, name: string, valuesYAML: string): $CancellablePromise<void> {
+    return $Call.ByID(2072901771, contextName, $namespace, name, valuesYAML);
 }
 
 /**

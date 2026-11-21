@@ -225,6 +225,10 @@ const flushInterval = 150 * time.Millisecond
 // runWatch lists then watches a collection until ctx is cancelled, relisting
 // when the resourceVersion expires and backing off on errors.
 func (c *Clients) runWatch(ctx context.Context, ref ResourceRef, namespace string, opts watchOptions, emit func(WatchEvent)) {
+	if isHelmReleaseRef(ref) {
+		c.runHelmWatch(ctx, namespace, opts, emit)
+		return
+	}
 	b := newBatcher()
 	done := make(chan struct{})
 	go func() {

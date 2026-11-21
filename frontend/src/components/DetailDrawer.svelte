@@ -9,6 +9,7 @@
     type Column,
     type ContainerMetrics,
     type EventInfo,
+    type HelmReleaseDetail,
     type ResourceRef,
     type Row,
     type WatchEvent,
@@ -35,8 +36,11 @@
 
   let { sel }: { sel: Selection } = $props();
 
-  let tab = $state<"overview" | "yaml">("overview");
+  let tab = $state<"overview" | "yaml" | "manifest">("overview");
   let obj = $state<Record<string, any> | null>(null);
+  let helmDetail = $state<HelmReleaseDetail | null>(null);
+  let helmValuesMode = $state<"user" | "merged">("user");
+  let rollingBackRev = $state<number | null>(null);
   let events = $state<EventInfo[]>([]);
   let metrics = $state<Record<string, ContainerMetrics>>({});
   let yaml = $state("");
@@ -60,11 +64,20 @@
 
   const kk = $derived(kindKey(sel.type));
   const isPod = $derived(kk === "/Pod");
+  const isHelmRelease = $derived(kk === "helm.sh/Release");
   const canJumpOwner = $derived(kk === "/Pod" || kk === "apps/ReplicaSet" || kk === "batch/Job");
   const canForward = $derived(kk === "/Pod" || kk === "/Service");
   const canScale = $derived(scalableKinds.has(kk));
   const canRestart = $derived(restartableKinds.has(kk));
-  const activeYaml = $derived(neat ? neatYaml : yaml);
+  const activeYaml = $derived(
+    isHelmRelease
+      ? helmValuesMode === "merged"
+        ? (helmDetail?.mergedValues ?? "")
+        : (helmDetail?.userValues ?? "")
+      : neat
+        ? neatYaml
+        : yaml,
+  );
   const dirty = $derived(editing && draft !== activeYaml);
 
   let loadSeq = 0;
@@ -78,6 +91,15 @@
     loading = true;
     error = "";
     try {
+      if (ref.group === "helm.sh" && ref.resource === "releases") {
+        const hd = await Kube.GetHelmRelease(ctx, ns, name);
+        if (seq !== loadSeq) return;
+        helmDetail = hd;
+        yaml = hd.userValues ?? "";
+        neatYaml = hd.mergedValues ?? "";
+        if (!editing) draft = helmValuesMode === "merged" ? neatYaml : yaml;
+        return;
+      }
       const detail = await Kube.GetDetail(ctx, ref, ns, name);
       if (seq !== loadSeq) return;
       obj = (detail.object as Record<string, any>) ?? null;
@@ -105,6 +127,11 @@
       editing = false;
       replicas = null;
       obj = null;
+      helmDetail = null;
+      rollingBackRev = null;
+      if (tab === "manifest" && !(sel.type.group === "helm.sh" && sel.type.resource === "releases")) {
+        tab = "overview";
+      }
       events = [];
       metrics = {};
       yaml = "";
@@ -158,8 +185,13 @@
   async function save() {
     saving = true;
     try {
-      await Kube.Update(app.context, refOf(sel.type), sel.namespace, sel.name, draft);
-      app.toast(`${sel.type.kind} ${sel.name} applied`, "ok");
+      if (isHelmRelease) {
+        await Kube.UpgradeHelmRelease(app.context, sel.namespace, sel.name, draft);
+        app.toast(`Release ${sel.name} upgraded`, "ok");
+      } else {
+        await Kube.Update(app.context, refOf(sel.type), sel.namespace, sel.name, draft);
+        app.toast(`${sel.type.kind} ${sel.name} applied`, "ok");
+      }
       editing = false;
       await load();
     } catch (e) {
@@ -171,13 +203,34 @@
 
   async function remove() {
     const where = sel.namespace ? ` in namespace ${sel.namespace}` : "";
-    if (!(await app.confirm(`Delete ${sel.type.kind}?`, `${sel.name}${where} will be deleted.`, true))) return;
+    const verb = isHelmRelease ? "Uninstall" : "Delete";
+    if (!(await app.confirm(`${verb} ${sel.type.kind}?`, `${sel.name}${where} will be ${verb.toLowerCase()}ed.`, true))) return;
     try {
       await Kube.Delete(app.context, refOf(sel.type), sel.namespace, sel.name);
-      app.toast(`${sel.type.kind} ${sel.name} deleted`, "ok");
+      app.toast(`${sel.type.kind} ${sel.name} ${verb.toLowerCase()}ed`, "ok");
       app.selection = null;
     } catch (e) {
       app.toast(errorMessage(e), "error");
+    }
+  }
+
+  async function rollbackHelm(rev: number) {
+    if (
+      !(await app.confirm(
+        `Rollback ${sel.name}?`,
+        `Roll back release ${sel.name} in namespace ${sel.namespace} to revision ${rev}?`,
+      ))
+    )
+      return;
+    rollingBackRev = rev;
+    try {
+      await Kube.RollbackHelmRelease(app.context, sel.namespace, sel.name, rev);
+      app.toast(`Rolled back ${sel.name} to revision ${rev}`, "ok");
+      await load();
+    } catch (e) {
+      app.toast(errorMessage(e), "error");
+    } finally {
+      rollingBackRev = null;
     }
   }
 
@@ -530,10 +583,21 @@
         aria-selected={tab === "yaml"}
         class:active={tab === "yaml"}
         onclick={() => (tab = "yaml")}
-        title="View or edit raw YAML manifest"
+        title={isHelmRelease ? "View or edit Helm release values" : "View or edit raw YAML manifest"}
       >
-        YAML{dirty ? " *" : ""}
+        {isHelmRelease ? "Values" : "YAML"}{dirty ? " *" : ""}
       </button>
+      {#if isHelmRelease}
+        <button
+          role="tab"
+          aria-selected={tab === "manifest"}
+          class:active={tab === "manifest"}
+          onclick={() => (tab = "manifest")}
+          title="View rendered Kubernetes manifest for this release"
+        >
+          Manifest
+        </button>
+      {/if}
     </div>
 
     {#if canJumpOwner || owners.length > 0}
@@ -600,7 +664,13 @@
           <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
         </svg>
       </button>
-      <button class="icon" onclick={startEdit} disabled={!yaml} title={`Edit YAML (${sel.type.kind} ${sel.name})`} aria-label="Edit YAML">
+      <button
+        class="icon"
+        onclick={startEdit}
+        disabled={isHelmRelease ? !helmDetail : !yaml}
+        title={isHelmRelease ? `Edit values (${sel.name})` : `Edit YAML (${sel.type.kind} ${sel.name})`}
+        aria-label={isHelmRelease ? "Edit values" : "Edit YAML"}
+      >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7" />
           <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
@@ -608,7 +678,12 @@
           <line x1="8" y1="13" x2="10" y2="13" />
         </svg>
       </button>
-      <button class="icon danger" onclick={remove} title={`Delete (${sel.type.kind} ${sel.name})`} aria-label="Delete">
+      <button
+        class="icon danger"
+        onclick={remove}
+        title={`${isHelmRelease ? "Uninstall" : "Delete"} (${sel.type.kind} ${sel.name})`}
+        aria-label={isHelmRelease ? "Uninstall" : "Delete"}
+      >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <polyline points="3 6 5 6 21 6" />
           <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
@@ -623,7 +698,106 @@
 
   {#if tab === "overview"}
     <div class="overview">
-      {#if loading && !obj}
+      {#if isHelmRelease}
+        {#if loading && !helmDetail}
+          <p class="empty">Loading…</p>
+        {:else if helmDetail}
+          {@const fullChart = helmDetail.chartVersion ? `${helmDetail.chart}-${helmDetail.chartVersion}` : helmDetail.chart}
+          <section class="section">
+            <h4>Release info</h4>
+            <dl class="kv-grid">
+              <dt>Name</dt>
+              <dd class="val-copy">
+                {@render copyBtn(helmDetail.name, "helm:name", "release name")}
+                <span class="mono val-text">{helmDetail.name}</span>
+              </dd>
+              <dt>Namespace</dt>
+              <dd class="val-copy">
+                {@render copyBtn(helmDetail.namespace, "helm:ns", "namespace")}
+                <span class="mono val-text">{helmDetail.namespace}</span>
+              </dd>
+              <dt>Revision</dt>
+              <dd class="mono val-text">{helmDetail.revision}</dd>
+              <dt>Status</dt>
+              <dd class={`val-text tone-${toneFor(helmDetail.status)}`}>{helmDetail.status}</dd>
+              <dt>Chart</dt>
+              <dd class="val-copy">
+                {@render copyBtn(fullChart, "helm:chart", "chart")}
+                <span class="mono val-text">{fullChart || "—"}</span>
+              </dd>
+              {#if helmDetail.appVersion}
+                <dt>App version</dt>
+                <dd class="val-copy">
+                  {@render copyBtn(helmDetail.appVersion, "helm:appver", "app version")}
+                  <span class="mono val-text">{helmDetail.appVersion}</span>
+                </dd>
+              {/if}
+              {#if helmDetail.firstDeployed}
+                <dt>First deployed</dt>
+                <dd class="val-text">{age(helmDetail.firstDeployed, app.now)} ago <span class="muted">({helmDetail.firstDeployed})</span></dd>
+              {/if}
+              {#if helmDetail.lastDeployed}
+                <dt>Last deployed</dt>
+                <dd class="val-text">{age(helmDetail.lastDeployed, app.now)} ago <span class="muted">({helmDetail.lastDeployed})</span></dd>
+              {/if}
+              {#if helmDetail.description}
+                <dt>Description</dt>
+                <dd class="val-text">{helmDetail.description}</dd>
+              {/if}
+            </dl>
+          </section>
+
+          <section class="section">
+            <h4>Revisions ({(helmDetail.history ?? []).length})</h4>
+            {#if (helmDetail.history ?? []).length === 0}
+              <p class="muted empty-inline">No revision history.</p>
+            {:else}
+              <table class="ledger-table revisions-table">
+                <thead>
+                  <tr>
+                    <th class="col-rev-num">Rev</th>
+                    <th class="col-rev-status">Status</th>
+                    <th>Chart</th>
+                    <th class="col-rev-age">Updated</th>
+                    <th>Description</th>
+                    <th class="col-rev-act"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each helmDetail.history ?? [] as h (h.revision)}
+                    <tr>
+                      <td class="col-rev-num mono val-text">{h.revision}</td>
+                      <td class={`col-rev-status val-text tone-${toneFor(h.status)}`}>{h.status}</td>
+                      <td class="mono val-text">{h.chart || "—"}</td>
+                      <td class="col-rev-age mono muted val-text">{h.updated ? age(h.updated, app.now) : "—"}</td>
+                      <td class="val-text">{h.description || "—"}</td>
+                      <td class="col-rev-act">
+                        {#if h.revision !== helmDetail.revision}
+                          <button
+                            class="mini"
+                            disabled={rollingBackRev !== null}
+                            onclick={() => rollbackHelm(h.revision)}
+                            title={`Roll back ${sel.name} to revision ${h.revision}`}
+                          >
+                            {rollingBackRev === h.revision ? "…" : "Rollback"}
+                          </button>
+                        {/if}
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            {/if}
+          </section>
+
+          {#if helmDetail.notes}
+            <section class="section">
+              <h4>Notes</h4>
+              <pre class="helm-notes mono val-text">{helmDetail.notes}</pre>
+            </section>
+          {/if}
+        {/if}
+      {:else if loading && !obj}
         <p class="empty">Loading…</p>
       {:else if obj}
         <section class="section">
@@ -1040,19 +1214,59 @@
         </section>
       {/if}
     </div>
+  {:else if tab === "manifest" && isHelmRelease}
+    <div class="yaml-bar">
+      <span class="muted yaml-hint">Rendered manifest (revision {helmDetail?.revision ?? "—"})</span>
+      <span class="grow"></span>
+      {@render copyBtn(helmDetail?.manifest ?? "", "helm:manifest", "rendered manifest")}
+    </div>
+    <YamlEditor readonly value={helmDetail?.manifest ?? ""} placeholder={loading ? "Loading…" : "No manifest."} />
   {:else}
     <div class="yaml-bar">
-      <label class="neat-toggle">
-        <input type="checkbox" bind:checked={neat} disabled={editing} />
-        Neat
-      </label>
+      {#if isHelmRelease}
+        <label class="neat-toggle">
+          <input
+            type="radio"
+            name="helm-values-mode"
+            value="user"
+            checked={helmValuesMode === "user"}
+            disabled={editing}
+            onchange={() => (helmValuesMode = "user")}
+          />
+          User values
+        </label>
+        <label class="neat-toggle">
+          <input
+            type="radio"
+            name="helm-values-mode"
+            value="merged"
+            checked={helmValuesMode === "merged"}
+            disabled={editing}
+            onchange={() => (helmValuesMode = "merged")}
+          />
+          Merged values
+        </label>
+      {:else}
+        <label class="neat-toggle">
+          <input type="checkbox" bind:checked={neat} disabled={editing} />
+          Neat
+        </label>
+      {/if}
       <span class="grow"></span>
-      {@render copyBtn(editing ? draft : activeYaml, "yaml:doc", neat ? "neated YAML" : "raw YAML")}
+      {@render copyBtn(
+        editing ? draft : activeYaml,
+        "yaml:doc",
+        isHelmRelease ? (helmValuesMode === "merged" ? "merged values" : "user values") : neat ? "neated YAML" : "raw YAML",
+      )}
     </div>
     {#if editing}
       <YamlEditor bind:value={draft} onkeydown={onKey} placeholder={loading ? "Loading…" : ""} />
     {:else}
-      <YamlEditor readonly value={activeYaml} placeholder={loading ? "Loading…" : ""} />
+      <YamlEditor
+        readonly
+        value={activeYaml}
+        placeholder={loading ? "Loading…" : isHelmRelease ? "# No user-supplied values" : ""}
+      />
     {/if}
   {/if}
 </aside>
@@ -1579,6 +1793,39 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .yaml-hint {
+    font-size: 12px;
+  }
+  .revisions-table .col-rev-num {
+    width: 44px;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .revisions-table .col-rev-status {
+    width: 88px;
+    white-space: nowrap;
+  }
+  .revisions-table .col-rev-age {
+    width: 60px;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .revisions-table .col-rev-act {
+    width: 72px;
+    text-align: right;
+    padding-right: 0;
+    white-space: nowrap;
+  }
+  .helm-notes {
+    margin: 0;
+    padding: var(--space-2);
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 16px;
   }
   .inline-banner {
     margin: 0;
