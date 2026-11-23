@@ -607,7 +607,7 @@
   thead th {
     position: sticky;
     top: 0;
-    z-index: 2;
+    z-index: 4;
     background: var(--bg);
     text-align: left;
     font-weight: 600;
@@ -649,7 +649,7 @@
     bottom: 0;
     width: 7px;
     cursor: col-resize;
-    z-index: 3;
+    z-index: 5;
   }
   .col-resizer:hover,
   .col-resizer.active {

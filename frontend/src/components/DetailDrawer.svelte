@@ -66,6 +66,14 @@
   const kk = $derived(kindKey(sel.type));
   const isPod = $derived(kk === "/Pod");
   const isHelmRelease = $derived(kk === "helm.sh/Release");
+  const canWorkloadLogs = $derived(
+    kk === "apps/Deployment" ||
+      kk === "apps/ReplicaSet" ||
+      kk === "apps/StatefulSet" ||
+      kk === "apps/DaemonSet" ||
+      kk === "batch/Job" ||
+      kk === "batch/CronJob",
+  );
   const canJumpOwner = $derived(kk === "/Pod" || kk === "apps/ReplicaSet" || kk === "batch/Job");
   const canForward = $derived(kk === "/Pod" || kk === "/Service");
   const canScale = $derived(scalableKinds.has(kk));
@@ -280,8 +288,25 @@
     }
   }
 
+  function openPodDock(podName: string, ns: string, kind: "logs" | "shell", container = "") {
+    app.openDock({ kind, title: podName, context: app.context, namespace: ns, pod: podName, container });
+  }
+
   function openDock(kind: "logs" | "shell", container = "") {
-    app.openDock({ kind, title: sel.name, context: app.context, namespace: sel.namespace, pod: sel.name, container });
+    openPodDock(sel.name, sel.namespace, kind, container);
+  }
+
+  function openWorkloadLogs() {
+    const uid = String(metadata.uid ?? "");
+    if (!uid) return;
+    app.openDock({
+      kind: "logs",
+      title: `${sel.type.kind}/${sel.name}`,
+      context: app.context,
+      namespace: sel.namespace,
+      pod: "",
+      workload: { kind: sel.type.kind, uid, name: sel.name },
+    });
   }
 
   function onKey(e: KeyboardEvent) {
@@ -663,6 +688,22 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <polyline points="4 17 10 11 4 5" />
             <line x1="12" y1="19" x2="20" y2="19" />
+          </svg>
+        </button>
+      {:else if canWorkloadLogs}
+        <button
+          class="icon"
+          onclick={openWorkloadLogs}
+          disabled={!metadata.uid}
+          title={`Aggregated logs (${sel.type.kind} ${sel.name})`}
+          aria-label="Aggregated logs"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="8" y1="13" x2="16" y2="13" />
+            <line x1="8" y1="17" x2="16" y2="17" />
+            <line x1="8" y1="9" x2="10" y2="9" />
           </svg>
         </button>
       {/if}
@@ -1161,6 +1202,7 @@
                     <th class="col-pod-status">Status</th>
                     <th class="col-pod-age">Age</th>
                     <th class="col-pod-restarts">Restarts</th>
+                    <th class="col-pod-act"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1203,6 +1245,30 @@
                       <td class={`col-pod-status val-text tone-${toneFor(podStatus)}`}>{podStatus}</td>
                       <td class="col-pod-age mono muted val-text">{p.created ? age(p.created, app.now) : "—"}</td>
                       <td class="col-pod-restarts mono val-text">{podRestarts}</td>
+                      <td class="col-pod-act">
+                        <div class="pod-acts">
+                          <button
+                            class="mini"
+                            onclick={(e) => {
+                              e.stopPropagation();
+                              openPodDock(p.name, p.namespace, "logs");
+                            }}
+                            title={`View logs for Pod ${p.name}`}
+                          >
+                            Logs
+                          </button>
+                          <button
+                            class="mini"
+                            onclick={(e) => {
+                              e.stopPropagation();
+                              openPodDock(p.name, p.namespace, "shell");
+                            }}
+                            title={`Open shell in Pod ${p.name}`}
+                          >
+                            Shell
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   {/each}
                 </tbody>
@@ -1757,28 +1823,38 @@
     min-width: 0;
   }
   .pods-table .col-pod-ready {
-    width: 50px;
+    width: 42px;
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
   }
   .pods-table .col-pod-status {
-    width: 92px;
+    width: 78px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
   .pods-table .col-pod-age {
-    width: 44px;
+    width: 38px;
     text-align: right;
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
   }
   .pods-table .col-pod-restarts {
-    width: 60px;
+    width: 54px;
+    text-align: right;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .pods-table .col-pod-act {
+    width: 88px;
     text-align: right;
     padding-right: 0;
     white-space: nowrap;
-    font-variant-numeric: tabular-nums;
+  }
+  .pod-acts {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
   }
   .pods-table tbody tr.pod-row {
     cursor: pointer;

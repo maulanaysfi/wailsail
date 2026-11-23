@@ -91,6 +91,7 @@
           namespace={t.namespace}
           pod={t.pod}
           initialContainer={t.container}
+          workload={t.workload}
           onStatus={(s) => app.setDockStatus(t.id, s)}
         />
       {:else}

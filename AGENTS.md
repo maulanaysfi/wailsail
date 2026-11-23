@@ -100,8 +100,8 @@ flowchart LR
   - `UninstallHelmRelease(contextName, namespace, name string) error` — deletes managed manifest resources and release history Secrets
 
 ### `internal/logs`
-- `Service`: `Start(contextName, namespace, pod string, opts Options, streamID string) (string, error)` and `Stop(streamID string)`.
-- Batches log lines every 100ms and emits `Event` (`lines`, `ended`, `error`) on `wailsail:logs:<id>`.
+- `Service`: `Start(contextName, namespace, pod string, opts Options, streamID string) (string, error)`, `StartWorkload(contextName, namespace, kind, uid, name string, opts Options, streamID string) (string, error)` (aggregates main containers across up to 15 owned Pods with live rollout tracking and evenly split `TailLines`), and `Stop(streamID string)`.
+- Batches log lines every 100ms and emits `Event` (`lines`, `entries`, `podCount`, `totalPods`, `ended`, `error`) on `wailsail:logs:<id>`.
 
 ### `internal/exec`
 - `Service`: `Start(contextName, namespace, pod, container string, command []string, cols, rows uint16, sessionID string) (string, error)`, `Write(sessionID, data string) error`, `Resize(sessionID string, cols, rows uint16) error`, and `Close(sessionID string)`.

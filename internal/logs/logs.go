@@ -26,12 +26,22 @@ type Options struct {
 	Follow     bool   `json:"follow"`
 }
 
+// LineEntry carries one aggregated log line tagged with its source pod and container.
+type LineEntry struct {
+	Pod       string `json:"pod,omitempty"`
+	Container string `json:"container,omitempty"`
+	Text      string `json:"text"`
+}
+
 // Event is the payload pushed on Topic(id).
 type Event struct {
-	Connected bool     `json:"connected,omitempty"`
-	Lines     []string `json:"lines,omitempty"`
-	Ended     bool     `json:"ended,omitempty"`
-	Error     string   `json:"error,omitempty"`
+	Connected bool        `json:"connected,omitempty"`
+	Lines     []string    `json:"lines,omitempty"`
+	Entries   []LineEntry `json:"entries,omitempty"`
+	PodCount  int         `json:"podCount,omitempty"`
+	TotalPods int         `json:"totalPods,omitempty"`
+	Ended     bool        `json:"ended,omitempty"`
+	Error     string      `json:"error,omitempty"`
 }
 
 // Topic is the event name for a log stream.
@@ -140,17 +150,28 @@ func Pump(ctx context.Context, r io.Reader, interval time.Duration, deliver func
 		}
 	}()
 
-	br := bufio.NewReaderSize(r, 64*1024)
-	var buf []byte
 	emitLine := func(b []byte) {
-		if len(b) > 0 && b[len(b)-1] == '\r' {
-			b = b[:len(b)-1]
-		}
 		mu.Lock()
 		pending = append(pending, string(b))
 		mu.Unlock()
 	}
-	var readErr error
+	readErr := scanLines(r, emitLine)
+	close(stop)
+	<-tickerDone
+	flush()
+	return readErr
+}
+
+// scanLines reads '\n'-delimited lines (stripping trailing '\r') and splits lines exceeding maxLine.
+func scanLines(r io.Reader, emit func([]byte)) error {
+	br := bufio.NewReaderSize(r, 64*1024)
+	var buf []byte
+	emitChunk := func(b []byte) {
+		if len(b) > 0 && b[len(b)-1] == '\r' {
+			b = b[:len(b)-1]
+		}
+		emit(b)
+	}
 	for {
 		frag, err := br.ReadSlice('\n')
 		eol := err == nil
@@ -165,12 +186,12 @@ func Pump(ctx context.Context, r io.Reader, interval time.Duration, deliver func
 			} else {
 				buf = append(buf, frag[:room]...)
 				frag = frag[room:]
-				emitLine(buf)
+				emitChunk(buf)
 				buf = buf[:0]
 			}
 		}
 		if eol {
-			emitLine(buf)
+			emitChunk(buf)
 			buf = buf[:0]
 			continue
 		}
@@ -179,15 +200,10 @@ func Pump(ctx context.Context, r io.Reader, interval time.Duration, deliver func
 		}
 		if errors.Is(err, io.EOF) {
 			if len(buf) > 0 {
-				emitLine(buf)
+				emitChunk(buf)
 			}
-			break
+			return nil
 		}
-		readErr = err
-		break
+		return err
 	}
-	close(stop)
-	<-tickerDone
-	flush()
-	return readErr
 }

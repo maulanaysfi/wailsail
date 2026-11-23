@@ -62,9 +62,17 @@ export interface WatchEvent {
   deletes?: string[];
   error?: string;
 }
+export interface LogLineEntry {
+  pod?: string;
+  container?: string;
+  text: string;
+}
 export interface LogEvent {
   connected?: boolean;
   lines?: string[];
+  entries?: LogLineEntry[];
+  podCount?: number;
+  totalPods?: number;
   ended?: boolean;
   error?: string;
 }

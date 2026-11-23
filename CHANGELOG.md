@@ -6,7 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Aggregated Workload Logs (`logs.StartWorkload`, `LogViewer`, `DetailDrawer`)**: Added an aggregated `Logs` button in `DetailDrawer` for workloads (`Deployment`, `ReplicaSet`, `StatefulSet`, `DaemonSet`, `Job`, `CronJob`) streaming all main containers with a 15-pod safety cap, evenly split `TailLines`, automatic live following of newly created rollout Pods without reconnecting, and uniquely colored Pod name prefixes before each log line.
+- **Controlled Pods `Logs` & `Shell` Buttons (`DetailDrawer`)**: Added compact `Logs` and `Shell` text action buttons to each row in `DetailDrawer`'s controlled `Pods` table.
+
 ### Fixed
+- **Helm Template Sprig & Capabilities Support (`internal/kube/helm.go`)**: Switched Helm template functions to `github.com/Masterminds/sprig/v3` (fixing missing `semver` and related Sprig functions on charts like Cilium), added `.Capabilities.APIVersions.Has`, `fromYamlArray`/`fromJsonArray`, and wired live cluster `lookup`.
+- **Resource Table Header Overlap (`ResourceTable.svelte`)**: Raised sticky `thead th` `z-index` above `.meter-req-mark` so scrolling Pod rows no longer float vertical request lines over column headers.
 - **Pod Usage Text Cropping & Bar Alignment (`format.ts`, `ResourceTable.svelte`)**: Fixed `measureTextWidth(..., true)` applying `font-variant-numeric: tabular-nums` after `style.font` (which otherwise reset `tabular-nums`) and normalizing by CSS `zoom`, plus kept `.cell-meter` locked to `var(--text-w)` so trailing units (`173m`, `815Mi`) are never cropped and all usage bars stay aligned across rows.
 - **Resource Meter Fill Clipping**: Added an inner rounded `.meter-clip` container inside `.meter-track` (`style.css`, `ResourceTable.svelte`, `DetailDrawer.svelte`) so low-percentage usage fills render as a partial circle clipped to the pill track instead of a flat vertical line while keeping `.meter-req-mark` extending 2px above and below the bar.
 

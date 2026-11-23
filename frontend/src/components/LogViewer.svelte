@@ -8,16 +8,19 @@
     namespace,
     pod,
     initialContainer = "",
+    workload,
     onStatus,
   }: {
     context: string;
     namespace: string;
     pod: string;
     initialContainer?: string;
+    workload?: { kind: string; uid: string; name: string };
     onStatus?: (s: DockStatus) => void;
   } = $props();
 
   const MAX_LINES = 10_000;
+  const POD_COLOR_COUNT = 10;
   const LINE_H = 16;
   const OVERSCAN = 60;
   const K8S_TS_RE = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))(\s+)(.*)$/;
@@ -25,6 +28,8 @@
   interface LogEntry {
     id: number;
     lower: string;
+    pod: string;
+    podColor: number;
     ts: string;
     body: string;
   }
@@ -37,6 +42,8 @@
   let follow = $state(true);
   let paused = $state(false);
   let search = $state("");
+  let podCount = $state(0);
+  let totalPods = $state(0);
   let entries: LogEntry[] = [];
   let version = $state(0);
   let ended = $state(false);
@@ -47,20 +54,45 @@
   let viewportH = $state(320);
   let stickBottom = $state(true);
   let lineSeq = 0;
+  const podColors = new Map<string, number>();
 
-  function makeEntry(line: string, withTs: boolean): LogEntry {
-    if (withTs) {
-      const m = K8S_TS_RE.exec(line);
-      if (m) return { id: ++lineSeq, lower: line.toLowerCase(), ts: m[1] + m[2], body: m[3] };
-    }
-    return { id: ++lineSeq, lower: line.toLowerCase(), ts: "", body: line };
+  function colorForPod(name: string): number {
+    if (!name) return 0;
+    const existing = podColors.get(name);
+    if (existing !== undefined) return existing;
+    const idx = podColors.size % POD_COLOR_COUNT;
+    podColors.set(name, idx);
+    return idx;
   }
 
-  // Load containers of the pod once.
+  function makeEntry(line: string, withTs: boolean, podName = ""): LogEntry {
+    let ts = "";
+    let body = line;
+    if (withTs) {
+      const m = K8S_TS_RE.exec(line);
+      if (m) {
+        ts = m[1] + m[2];
+        body = m[3];
+      }
+    }
+    const lower = podName ? `${podName} ${line}`.toLowerCase() : line.toLowerCase();
+    return {
+      id: ++lineSeq,
+      lower,
+      pod: podName,
+      podColor: podName ? colorForPod(podName) : 0,
+      ts,
+      body,
+    };
+  }
+
+  // Load containers of the pod once (single-pod mode only).
   $effect(() => {
     const ctx = context,
       ns = namespace,
-      p = pod;
+      p = pod,
+      wl = workload;
+    if (wl || !p) return;
     Kube.PodContainers(ctx, ns, p)
       .then((cs) => {
         containers = cs ?? [];
@@ -79,15 +111,19 @@
     const ctx = context,
       ns = namespace,
       p = pod,
+      wl = workload,
       c = container,
       tail = tailLines,
       ts = timestamps,
       prev = previous,
       flw = follow;
     restartNonce;
-    if (!c) return;
+    if (!wl && !c) return;
     untrack(() => {
       entries = [];
+      podColors.clear();
+      podCount = 0;
+      totalPods = 0;
       version++;
       scrollTop = 0;
       stickBottom = true;
@@ -98,9 +134,20 @@
     const id = newStreamId();
     const off = on<LogEvent>(topics.logs(id), async (ev) => {
       if (ev.connected) onStatus?.("connected");
-      if (!paused && ev.lines?.length) {
+      if (ev.podCount !== undefined) podCount = ev.podCount;
+      if (ev.totalPods !== undefined) totalPods = ev.totalPods;
+      const hasEntries = (ev.entries?.length ?? 0) > 0;
+      const hasLines = (ev.lines?.length ?? 0) > 0;
+      if (!paused && (hasEntries || hasLines)) {
         onStatus?.("connected");
-        for (const line of ev.lines) entries.push(makeEntry(line, ts));
+        if (hasEntries) {
+          for (const item of ev.entries!) {
+            entries.push(makeEntry(item.text, ts, item.pod ?? ""));
+          }
+        }
+        if (hasLines) {
+          for (const line of ev.lines!) entries.push(makeEntry(line, ts));
+        }
         if (entries.length > MAX_LINES) {
           entries.splice(0, entries.length - MAX_LINES);
         }
@@ -120,13 +167,22 @@
         onStatus?.("disconnected");
       }
     });
-    Logs.Start(ctx, ns, p, { container: c, tailLines: tail, timestamps: ts, previous: prev, follow: flw }, id).catch(
-      (e) => {
-        error = errorMessage(e);
-        ended = true;
-        onStatus?.("disconnected");
-      },
-    );
+    const startPromise = wl
+      ? Logs.StartWorkload(
+          ctx,
+          ns,
+          wl.kind,
+          wl.uid,
+          wl.name,
+          { container: "", tailLines: tail, timestamps: ts, previous: false, follow: flw },
+          id,
+        )
+      : Logs.Start(ctx, ns, p, { container: c, tailLines: tail, timestamps: ts, previous: prev, follow: flw }, id);
+    startPromise.catch((e) => {
+      error = errorMessage(e);
+      ended = true;
+      onStatus?.("disconnected");
+    });
     return () => {
       off();
       Logs.Stop(id);
@@ -168,14 +224,20 @@
 
 <div class="logs">
   <div class="bar">
-    <label>
-      Container
-      <select bind:value={container}>
-        {#each containers as c (c.name)}
-          <option value={c.name}>{c.name}{c.type !== "main" ? ` (${c.type})` : ""}</option>
-        {/each}
-      </select>
-    </label>
+    {#if workload}
+      <span class={`pill ${totalPods > podCount ? "cap-warn" : ""}`}>
+        {totalPods > podCount ? `${podCount}/${totalPods} pods (capped)` : `${podCount} pod${podCount === 1 ? "" : "s"}`}
+      </span>
+    {:else}
+      <label>
+        Container
+        <select bind:value={container}>
+          {#each containers as c (c.name)}
+            <option value={c.name}>{c.name}{c.type !== "main" ? ` (${c.type})` : ""}</option>
+          {/each}
+        </select>
+      </label>
+    {/if}
     <label>
       Tail
       <select
@@ -202,7 +264,9 @@
       />
       Timestamps
     </label>
-    <label class="check"><input type="checkbox" bind:checked={previous} />Previous</label>
+    {#if !workload}
+      <label class="check"><input type="checkbox" bind:checked={previous} />Previous</label>
+    {/if}
     <label class="check"><input type="checkbox" bind:checked={follow} />Follow</label>
     <button onclick={() => (paused = !paused)} title={paused ? "Resume live log stream" : "Pause live log stream"}>
       {paused ? "Resume" : "Pause"}
@@ -218,7 +282,7 @@
   <div class="out" bind:this={scroller} bind:clientHeight={viewportH} onscroll={onScroll}>
     {#if view.first > 0}<div aria-hidden="true" style={`height:${view.first * LINE_H}px`}></div>{/if}
     {#each view.items as entry (entry.id)}
-      <div class="line">{#if entry.ts}<span class="ts">{entry.ts}</span>{/if}{entry.body}</div>
+      <div class="line">{#if entry.pod}<span class="pod-prefix" style={`color:var(--log-pod-${entry.podColor})`}>{entry.pod}</span>{" "}{/if}{#if entry.ts}<span class="ts">{entry.ts}</span>{/if}{entry.body}</div>
     {/each}
     {#if view.last < view.total}<div aria-hidden="true" style={`height:${(view.total - view.last) * LINE_H}px`}></div>{/if}
   </div>
@@ -268,6 +332,15 @@
     font-weight: 500;
     user-select: none;
     -webkit-user-select: none;
+  }
+  .pod-prefix {
+    font-weight: 600;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .cap-warn {
+    color: var(--warn);
+    border-color: var(--warn);
   }
   .line:hover {
     background: var(--hover);

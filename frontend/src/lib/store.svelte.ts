@@ -19,8 +19,20 @@ export interface Selection {
 export type DockStatus = "connecting" | "connected" | "disconnected";
 
 export type DockTab =
-  | { id: string; kind: "logs"; title: string; context: string; namespace: string; pod: string; container?: string }
+  | {
+      id: string;
+      kind: "logs";
+      title: string;
+      context: string;
+      namespace: string;
+      pod: string;
+      container?: string;
+      workload?: { kind: string; uid: string; name: string };
+    }
   | { id: string; kind: "shell"; title: string; context: string; namespace: string; pod: string; container?: string };
+
+type DistributiveOmit<T, K extends keyof any> = T extends any ? Omit<T, K> : never;
+export type DockTabInput = DistributiveOmit<DockTab, "id">;
 
 export interface Toast {
   id: number;
@@ -360,15 +372,18 @@ class AppState {
     this.saveSettings({ theme: next });
   }
 
-  openDock(tab: Omit<DockTab, "id">) {
-    const existing = this.dock.find(
-      (t) =>
-        t.kind === tab.kind &&
-        t.context === tab.context &&
-        t.namespace === tab.namespace &&
+  openDock(tab: DockTabInput) {
+    const existing = this.dock.find((t) => {
+      if (t.kind !== tab.kind || t.context !== tab.context || t.namespace !== tab.namespace) return false;
+      if (tab.kind === "logs" && tab.workload) {
+        return t.kind === "logs" && t.workload?.uid === tab.workload.uid;
+      }
+      return (
+        !(t.kind === "logs" && t.workload) &&
         t.pod === tab.pod &&
-        (!tab.container || !t.container || t.container === tab.container),
-    );
+        (!tab.container || !t.container || t.container === tab.container)
+      );
+    });
     if (existing) {
       this.activeDock = existing.id;
       this.dockOpen = true;
