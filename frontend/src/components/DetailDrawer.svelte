@@ -1198,11 +1198,11 @@
                 <thead>
                   <tr>
                     <th class="col-pod-name">Name</th>
+                    <th class="col-pod-act"></th>
                     <th class="col-pod-ready">Ready</th>
                     <th class="col-pod-status">Status</th>
                     <th class="col-pod-age">Age</th>
                     <th class="col-pod-restarts">Restarts</th>
-                    <th class="col-pod-act"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1241,10 +1241,6 @@
                           <div class="mono muted pod-ns val-text">{p.namespace}</div>
                         {/if}
                       </td>
-                      <td class="col-pod-ready mono val-text" class:tone-warn={podUnready}>{podReady}</td>
-                      <td class={`col-pod-status val-text tone-${toneFor(podStatus)}`}>{podStatus}</td>
-                      <td class="col-pod-age mono muted val-text">{p.created ? age(p.created, app.now) : "—"}</td>
-                      <td class="col-pod-restarts mono val-text">{podRestarts}</td>
                       <td class="col-pod-act">
                         <div class="pod-acts">
                           <button
@@ -1269,6 +1265,10 @@
                           </button>
                         </div>
                       </td>
+                      <td class="col-pod-ready mono val-text" class:tone-warn={podUnready}>{podReady}</td>
+                      <td class={`col-pod-status val-text tone-${toneFor(podStatus)}`}>{podStatus}</td>
+                      <td class="col-pod-age mono muted val-text">{p.created ? age(p.created, app.now) : "—"}</td>
+                      <td class="col-pod-restarts mono val-text">{podRestarts}</td>
                     </tr>
                   {/each}
                 </tbody>
@@ -1842,13 +1842,12 @@
   .pods-table .col-pod-restarts {
     width: 54px;
     text-align: right;
+    padding-right: 0;
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
   }
   .pods-table .col-pod-act {
-    width: 88px;
-    text-align: right;
-    padding-right: 0;
+    width: 92px;
     white-space: nowrap;
   }
   .pod-acts {

@@ -8,9 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - **Aggregated Workload Logs (`logs.StartWorkload`, `LogViewer`, `DetailDrawer`)**: Added an aggregated `Logs` button in `DetailDrawer` for workloads (`Deployment`, `ReplicaSet`, `StatefulSet`, `DaemonSet`, `Job`, `CronJob`) streaming all main containers with a 15-pod safety cap, evenly split `TailLines`, automatic live following of newly created rollout Pods without reconnecting, and uniquely colored Pod name prefixes before each log line.
-- **Controlled Pods `Logs` & `Shell` Buttons (`DetailDrawer`)**: Added compact `Logs` and `Shell` text action buttons to each row in `DetailDrawer`'s controlled `Pods` table.
+- **Controlled Pods `Logs` & `Shell` Buttons (`DetailDrawer`)**: Added compact `Logs` and `Shell` text action buttons between `Name` and `Ready` on each row in `DetailDrawer`'s controlled `Pods` table.
+- **Log Viewer `Wrap` Toggle (`LogViewer`)**: Added a `Wrap` checkbox to toggle between single-line horizontal scrolling (`white-space: pre`) and word-wrapped lines (`white-space: pre-wrap; word-break: break-all`).
+
+### Changed
+- **Controlled Pods Column Order (`DetailDrawer`)**: Moved the `Logs` / `Shell` action column (empty header) between `Name` and `Ready`, with `Restarts` flush-right at the end of the table.
 
 ### Fixed
+- **Log Viewer Scroll & Virtualization (`LogViewer`, `logWindow.ts`)**: Replaced fixed `16px` virtualizer math for wrapped lines with per-row height estimation/DOM measurement and viewport scroll anchoring (`computeLogWindow`), guarded `stickBottom` against async batch bursts and `onWheel` upward scrolling, and preserved scroll position when `MAX_LINES` trims or `Wrap` toggles.
 - **Helm Template Sprig & Capabilities Support (`internal/kube/helm.go`)**: Switched Helm template functions to `github.com/Masterminds/sprig/v3` (fixing missing `semver` and related Sprig functions on charts like Cilium), added `.Capabilities.APIVersions.Has`, `fromYamlArray`/`fromJsonArray`, and wired live cluster `lookup`.
 - **Resource Table Header Overlap (`ResourceTable.svelte`)**: Raised sticky `thead th` `z-index` above `.meter-req-mark` so scrolling Pod rows no longer float vertical request lines over column headers.
 - **Pod Usage Text Cropping & Bar Alignment (`format.ts`, `ResourceTable.svelte`)**: Fixed `measureTextWidth(..., true)` applying `font-variant-numeric: tabular-nums` after `style.font` (which otherwise reset `tabular-nums`) and normalizing by CSS `zoom`, plus kept `.cell-meter` locked to `var(--text-w)` so trailing units (`173m`, `815Mi`) are never cropped and all usage bars stay aligned across rows.

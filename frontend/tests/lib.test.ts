@@ -22,6 +22,7 @@ import {
   workloadColumnIndices,
 } from "../src/lib/specs.ts";
 import { tokenizeYaml, tokenizeYamlLine } from "../src/lib/yamlHighlight.ts";
+import { computeLogWindow, entryOffset, type LogEntryItem } from "../src/lib/logWindow.ts";
 
 test("maskSecretKey masks keys after first 4 chars and short keys as ****", () => {
   assert.equal(maskSecretKey(""), "****");
@@ -273,4 +274,53 @@ test("groupResources places Helm section right after Cluster and toneFor maps He
   assert.equal(toneFor("superseded"), "muted");
   assert.equal(toneFor("pending-upgrade"), "warn");
   assert.equal(toneFor("failed"), "bad");
+});
+
+test("computeLogWindow handles unwrapped and wrapped rows without blank overshoot", () => {
+  const mk = (id: number, body: string, pod = "web-0"): LogEntryItem => ({
+    id,
+    lower: `${pod} ${body}`.toLowerCase(),
+    pod,
+    podColor: 0,
+    ts: "",
+    body,
+  });
+
+  // 400 wrapped lines (~48px each via measured cache, totalHeight = 19200px).
+  const entries = Array.from({ length: 400 }, (_, i) => mk(i + 1, "x".repeat(180)));
+  const measured = new Map<number, number>(entries.map((e) => [e.id, 48]));
+
+  // Previously fixed 16px math with scrollTop=16000 computed first=1000 > total=400 -> 0 items.
+  const wrapped = computeLogWindow(entries, {
+    wrap: true,
+    stickBottom: false,
+    scrollTop: 16000,
+    viewportHeight: 320,
+    viewportWidth: 640,
+    measured,
+    overscan: 10,
+  });
+  assert.ok(wrapped.items.length > 0);
+  assert.equal(wrapped.first, 323);
+  assert.equal(wrapped.topPad, 323 * 48);
+  assert.equal(wrapped.totalHeight, 400 * 48);
+  assert.equal(wrapped.topPad + wrapped.items.length * 48 + wrapped.bottomPad, wrapped.totalHeight);
+
+  // Toggling wrap calculates target offset for anchor preservation.
+  assert.equal(entryOffset(entries, 11, false, measured, 640), 10 * 16);
+  assert.equal(entryOffset(entries, 11, true, measured, 640), 10 * 48);
+
+  // Search-filtered shrink clamps unwrapped scrollTop so items stay visible.
+  const unwrappedClamped = computeLogWindow(entries.slice(0, 10), {
+    wrap: false,
+    stickBottom: false,
+    scrollTop: 50000,
+    viewportHeight: 320,
+    viewportWidth: 640,
+    measured,
+    overscan: 5,
+  });
+  assert.equal(unwrappedClamped.items.length, 10);
+  assert.equal(unwrappedClamped.topPad, 0);
+  assert.equal(unwrappedClamped.bottomPad, 0);
 });

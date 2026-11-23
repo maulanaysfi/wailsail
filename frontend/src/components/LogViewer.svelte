@@ -1,6 +1,7 @@
 <script lang="ts">
   import { tick, untrack } from "svelte";
   import { Kube, Logs, newStreamId, on, topics, errorMessage, type ContainerInfo, type LogEvent } from "../lib/api";
+  import { computeLogWindow, entryOffset, type LogEntryItem } from "../lib/logWindow.ts";
   import { app, type DockStatus } from "../lib/store.svelte";
 
   let {
@@ -21,18 +22,7 @@
 
   const MAX_LINES = 10_000;
   const POD_COLOR_COUNT = 10;
-  const LINE_H = 16;
-  const OVERSCAN = 60;
   const K8S_TS_RE = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))(\s+)(.*)$/;
-
-  interface LogEntry {
-    id: number;
-    lower: string;
-    pod: string;
-    podColor: number;
-    ts: string;
-    body: string;
-  }
 
   let containers = $state<ContainerInfo[]>([]);
   let container = $state(untrack(() => initialContainer));
@@ -40,21 +30,30 @@
   let timestamps = $state(untrack(() => app.settings.logTimestamps));
   let previous = $state(false);
   let follow = $state(true);
+  let wrap = $state(false);
   let paused = $state(false);
   let search = $state("");
   let podCount = $state(0);
   let totalPods = $state(0);
-  let entries: LogEntry[] = [];
+  let entries: LogEntryItem[] = [];
   let version = $state(0);
+  let measureVersion = $state(0);
   let ended = $state(false);
   let error = $state("");
   let restartNonce = $state(0);
   let scroller: HTMLDivElement | undefined = $state();
   let scrollTop = $state(0);
   let viewportH = $state(320);
+  let viewportW = $state(640);
   let stickBottom = $state(true);
   let lineSeq = 0;
   const podColors = new Map<string, number>();
+  const measuredHeights = new Map<number, number>();
+  let lastMeasureWidth = 0;
+  let pinPending = false;
+  let adjustingScroll = false;
+  let lastScrollTop = 0;
+  let anchor: { id: number; relTop: number } | null = null;
 
   function colorForPod(name: string): number {
     if (!name) return 0;
@@ -65,7 +64,7 @@
     return idx;
   }
 
-  function makeEntry(line: string, withTs: boolean, podName = ""): LogEntry {
+  function makeEntry(line: string, withTs: boolean, podName = ""): LogEntryItem {
     let ts = "";
     let body = line;
     if (withTs) {
@@ -106,6 +105,22 @@
       });
   });
 
+  function resetEntries(clearPods = false) {
+    entries = [];
+    measuredHeights.clear();
+    if (clearPods) {
+      podColors.clear();
+      podCount = 0;
+      totalPods = 0;
+    }
+    version++;
+    scrollTop = 0;
+    lastScrollTop = 0;
+    stickBottom = true;
+    pinPending = false;
+    anchor = null;
+  }
+
   // Start / restart the log stream whenever options change.
   $effect(() => {
     const ctx = context,
@@ -120,19 +135,13 @@
     restartNonce;
     if (!wl && !c) return;
     untrack(() => {
-      entries = [];
-      podColors.clear();
-      podCount = 0;
-      totalPods = 0;
-      version++;
-      scrollTop = 0;
-      stickBottom = true;
+      resetEntries(true);
       ended = false;
       error = "";
       onStatus?.("connecting");
     });
     const id = newStreamId();
-    const off = on<LogEvent>(topics.logs(id), async (ev) => {
+    const off = on<LogEvent>(topics.logs(id), (ev) => {
       if (ev.connected) onStatus?.("connected");
       if (ev.podCount !== undefined) podCount = ev.podCount;
       if (ev.totalPods !== undefined) totalPods = ev.totalPods;
@@ -149,14 +158,11 @@
           for (const line of ev.lines!) entries.push(makeEntry(line, ts));
         }
         if (entries.length > MAX_LINES) {
-          entries.splice(0, entries.length - MAX_LINES);
+          const trimmed = entries.splice(0, entries.length - MAX_LINES);
+          for (const item of trimmed) measuredHeights.delete(item.id);
         }
+        if (stickBottom) pinPending = true;
         version++;
-        if (stickBottom && scroller) {
-          await tick();
-          scroller.scrollTop = scroller.scrollHeight;
-          scrollTop = scroller.scrollTop;
-        }
       }
       if (ev.error) {
         error = ev.error;
@@ -189,37 +195,149 @@
     };
   });
 
-  // shortcut: fixed 16px row height estimate for spacers; wrapped lines render cleanly inside the 60-line overscan window.
+  function filteredEntries(): LogEntryItem[] {
+    const q = search.trim().toLowerCase();
+    return q ? entries.filter((e) => e.lower.includes(q)) : entries;
+  }
+
   const view = $derived.by(() => {
     version;
-    const q = search.trim().toLowerCase();
-    const list = q ? entries.filter((e) => e.lower.includes(q)) : entries;
-    const total = list.length;
-    const page = Math.max(1, Math.ceil(viewportH / LINE_H));
-    let first: number;
-    let last: number;
-    if (stickBottom) {
-      last = total;
-      first = Math.max(0, last - page - OVERSCAN * 2);
-    } else {
-      first = Math.max(0, Math.floor(scrollTop / LINE_H) - OVERSCAN);
-      last = Math.min(total, Math.ceil((scrollTop + viewportH) / LINE_H) + OVERSCAN);
-    }
-    return { total, first, last, items: list.slice(first, last) };
+    measureVersion;
+    return computeLogWindow(filteredEntries(), {
+      wrap,
+      stickBottom,
+      scrollTop,
+      viewportHeight: viewportH,
+      viewportWidth: viewportW,
+      measured: measuredHeights,
+    });
   });
 
   function clearLogs() {
-    entries = [];
-    version++;
-    scrollTop = 0;
-    stickBottom = true;
+    resetEntries(false);
+  }
+
+  function captureAnchor(): { id: number; relTop: number } | null {
+    if (!scroller) return null;
+    const scrollerTop = scroller.getBoundingClientRect().top;
+    const nodes = scroller.querySelectorAll<HTMLElement>(".line[data-id]");
+    for (const el of nodes) {
+      const rect = el.getBoundingClientRect();
+      if (rect.bottom > scrollerTop + 1) {
+        const id = Number(el.dataset.id);
+        if (!Number.isNaN(id)) return { id, relTop: rect.top - scrollerTop };
+      }
+    }
+    return null;
+  }
+
+  function applyDomScrollTop(next: number) {
+    if (!scroller) return;
+    adjustingScroll = true;
+    scroller.scrollTop = next;
+    const actual = scroller.scrollTop;
+    lastScrollTop = actual;
+    if (Math.abs(scrollTop - actual) >= 1) scrollTop = actual;
+    requestAnimationFrame(() => {
+      adjustingScroll = false;
+      pinPending = false;
+    });
+  }
+
+  async function toggleWrap(nextWrap: boolean) {
+    const captured = !stickBottom ? captureAnchor() : null;
+    if (nextWrap) measuredHeights.clear();
+    wrap = nextWrap;
+    await tick();
+    if (!scroller) return;
+    if (stickBottom) {
+      applyDomScrollTop(scroller.scrollHeight);
+      return;
+    }
+    if (captured) {
+      const offset = entryOffset(filteredEntries(), captured.id, wrap, measuredHeights, viewportW);
+      if (offset >= 0) applyDomScrollTop(Math.max(0, offset - captured.relTop));
+    }
+  }
+
+  function onWheel(e: WheelEvent) {
+    if (e.deltaY < 0) {
+      stickBottom = false;
+      pinPending = false;
+    }
   }
 
   function onScroll() {
-    if (!scroller) return;
-    scrollTop = scroller.scrollTop;
-    stickBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 24;
+    if (!scroller || adjustingScroll) return;
+    const nextTop = scroller.scrollTop;
+    const scrolledUp = nextTop < lastScrollTop - 2;
+    scrollTop = nextTop;
+    lastScrollTop = nextTop;
+    if (scrolledUp) {
+      stickBottom = false;
+      pinPending = false;
+    } else if (!pinPending) {
+      stickBottom = scroller.scrollHeight - nextTop - scroller.clientHeight < 24;
+    }
   }
+
+  $effect.pre(() => {
+    view;
+    wrap;
+    if (!scroller || stickBottom) {
+      anchor = null;
+      return;
+    }
+    anchor = captureAnchor();
+  });
+
+  $effect(() => {
+    view;
+    wrap;
+    const w = viewportW;
+    viewportH;
+    if (!scroller) return;
+
+    if (w > 0 && Math.abs(w - lastMeasureWidth) >= 2) {
+      lastMeasureWidth = w;
+      if (wrap && measuredHeights.size > 0) measuredHeights.clear();
+    }
+
+    if (wrap) {
+      let changed = false;
+      const nodes = scroller.querySelectorAll<HTMLElement>(".line[data-id]");
+      for (const el of nodes) {
+        const id = Number(el.dataset.id);
+        if (Number.isNaN(id)) continue;
+        const h = el.getBoundingClientRect().height;
+        const prev = measuredHeights.get(id);
+        if (h > 0 && (prev === undefined || Math.abs(h - prev) >= 0.5)) {
+          measuredHeights.set(id, h);
+          changed = true;
+        }
+      }
+      if (changed) measureVersion++;
+    }
+
+    if (stickBottom) {
+      if (scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight > 1 || pinPending) {
+        applyDomScrollTop(scroller.scrollHeight);
+      }
+      return;
+    }
+
+    if (anchor) {
+      const target = scroller.querySelector<HTMLElement>(`.line[data-id="${anchor.id}"]`);
+      if (target) {
+        const newRelTop = target.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+        const delta = newRelTop - anchor.relTop;
+        if (Math.abs(delta) >= 1) {
+          applyDomScrollTop(Math.max(0, scroller.scrollTop + delta));
+        }
+      }
+      anchor = null;
+    }
+  });
 </script>
 
 <div class="logs">
@@ -268,6 +386,10 @@
       <label class="check"><input type="checkbox" bind:checked={previous} />Previous</label>
     {/if}
     <label class="check"><input type="checkbox" bind:checked={follow} />Follow</label>
+    <label class="check">
+      <input type="checkbox" checked={wrap} onchange={(e) => toggleWrap(e.currentTarget.checked)} />
+      Wrap
+    </label>
     <button onclick={() => (paused = !paused)} title={paused ? "Resume live log stream" : "Pause live log stream"}>
       {paused ? "Resume" : "Pause"}
     </button>
@@ -279,12 +401,20 @@
 
   {#if error}<div class="banner error">{error}</div>{/if}
 
-  <div class="out" bind:this={scroller} bind:clientHeight={viewportH} onscroll={onScroll}>
-    {#if view.first > 0}<div aria-hidden="true" style={`height:${view.first * LINE_H}px`}></div>{/if}
+  <div
+    class="out"
+    class:wrap
+    bind:this={scroller}
+    bind:clientHeight={viewportH}
+    bind:clientWidth={viewportW}
+    onscroll={onScroll}
+    onwheel={onWheel}
+  >
+    {#if view.topPad > 0}<div aria-hidden="true" style={`height:${view.topPad}px`}></div>{/if}
     {#each view.items as entry (entry.id)}
-      <div class="line">{#if entry.pod}<span class="pod-prefix" style={`color:var(--log-pod-${entry.podColor})`}>{entry.pod}</span>{" "}{/if}{#if entry.ts}<span class="ts">{entry.ts}</span>{/if}{entry.body}</div>
+      <div class="line" data-id={entry.id}>{#if entry.pod}<span class="pod-prefix" style={`color:var(--log-pod-${entry.podColor})`}>{entry.pod}</span>{" "}{/if}{#if entry.ts}<span class="ts">{entry.ts}</span>{/if}{entry.body}</div>
     {/each}
-    {#if view.last < view.total}<div aria-hidden="true" style={`height:${(view.total - view.last) * LINE_H}px`}></div>{/if}
+    {#if view.bottomPad > 0}<div aria-hidden="true" style={`height:${view.bottomPad}px`}></div>{/if}
   </div>
 </div>
 
@@ -322,10 +452,17 @@
     font-size: 12px;
     line-height: 16px;
     background: var(--code-bg);
-    white-space: pre-wrap;
-    word-break: break-all;
+    white-space: pre;
     user-select: text;
     -webkit-user-select: text;
+  }
+  .out.wrap {
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .out:not(.wrap) .line {
+    width: max-content;
+    min-width: 100%;
   }
   .ts {
     color: var(--accent);
