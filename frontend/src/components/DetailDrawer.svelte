@@ -51,8 +51,8 @@
   let editing = $state(false);
   let loading = $state(false);
   function defaultDrawerWidth(): number {
-    if (typeof window === "undefined") return 544;
-    return Math.min(1100, Math.max(384, Math.round((window.innerWidth / cssZoom()) * 0.4)));
+    if (typeof window === "undefined") return 600;
+    return Math.min(1100, Math.max(384, Math.round((window.innerWidth / cssZoom()) * 0.45)));
   }
 
   let saving = $state(false);
@@ -1819,41 +1819,49 @@
   .pods-table {
     table-layout: fixed;
   }
+  .pods-table td {
+    vertical-align: middle;
+  }
   .pods-table .col-pod-name {
     min-width: 0;
+    padding-right: var(--space-3);
   }
   .pods-table .col-pod-ready {
-    width: 42px;
+    width: 52px;
+    padding-right: var(--space-3);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
   }
   .pods-table .col-pod-status {
-    width: 78px;
+    width: 88px;
+    padding-right: var(--space-3);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
   .pods-table .col-pod-age {
-    width: 38px;
+    width: 48px;
+    padding-right: var(--space-3);
     text-align: right;
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
   }
   .pods-table .col-pod-restarts {
-    width: 54px;
+    width: 60px;
     text-align: right;
     padding-right: 0;
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
   }
   .pods-table .col-pod-act {
-    width: 92px;
+    width: 112px;
+    padding-right: var(--space-3);
     white-space: nowrap;
   }
   .pod-acts {
     display: inline-flex;
     align-items: center;
-    gap: var(--space-1);
+    gap: var(--space-2);
   }
   .pods-table tbody tr.pod-row {
     cursor: pointer;

@@ -12,7 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Log Viewer `Wrap` Toggle (`LogViewer`)**: Added a `Wrap` checkbox to toggle between single-line horizontal scrolling (`white-space: pre`) and word-wrapped lines (`white-space: pre-wrap; word-break: break-all`).
 
 ### Changed
-- **Controlled Pods Column Order (`DetailDrawer`)**: Moved the `Logs` / `Shell` action column (empty header) between `Name` and `Ready`, with `Restarts` flush-right at the end of the table.
+- **Controlled Pods Layout & Drawer Width (`DetailDrawer`)**: Moved the `Logs` / `Shell` action column (empty header) between `Name` and `Ready`, increased button gap (`8px`) and column gutters (`16px`) with middle alignment and `Restarts` flush-right, and widened default `DetailDrawer` width from `40vw` to `45vw`.
 
 ### Fixed
 - **Log Viewer Scroll & Virtualization (`LogViewer`, `logWindow.ts`)**: Replaced fixed `16px` virtualizer math for wrapped lines with per-row height estimation/DOM measurement and viewport scroll anchoring (`computeLogWindow`), guarded `stickBottom` against async batch bursts and `onWheel` upward scrolling, and preserved scroll position when `MAX_LINES` trims or `Wrap` toggles.
