@@ -344,12 +344,55 @@ test("buildSpecRows and buildSelectorGroups render CRD specs cleanly with 5-item
   });
   const disabledRow = poolRows.find((r) => r.label === "Disabled");
   assert.equal(disabledRow?.tone, "ok");
+  assert.equal(poolRows.find((r) => r.label === "Allow first last IPs")?.value, "Yes");
   assert.equal(poolRows.some((r) => r.label.includes("Service selector")), false);
-  const blocksRow = poolRows.find((r) => r.label === "Blocks");
+  const blocksRow = poolRows.find((r) => r.label === "CIDR Blocks");
   assert.ok(blocksRow);
   assert.equal(blocksRow.moreCount, 1);
   assert.ok(blocksRow.fullValue?.includes("start=10.0.6.10"));
   assert.ok(!blocksRow.value.includes("item(s)"));
+
+  const l2Rows = buildSpecRows("CiliumL2AnnouncementPolicy", {
+    spec: { externalIPs: true, loadBalancerIPs: true, interfaces: ["eth0"] },
+  });
+  assert.equal(l2Rows.find((r) => r.label === "External IPs")?.value, "true");
+  assert.equal(l2Rows.find((r) => r.label === "Load balancer IPs")?.value, "true");
+
+  const egwRows = buildSpecRows("CiliumEgressGatewayPolicy", {
+    spec: { destinationCIDRs: ["0.0.0.0/0"], egressGateway: { egressIP: "10.0.0.10" } },
+  });
+  assert.equal(egwRows.find((r) => r.label === "Destination CIDRs")?.value, "0.0.0.0/0");
+
+  const cnodeRows = buildSpecRows("CiliumNode", {
+    spec: { bootid: "abc-123" },
+  });
+  assert.equal(cnodeRows.find((r) => r.label === "BootID")?.value, "abc-123");
+
+  const ccnpDoc = {
+    specs: [
+      {
+        description: "rule-one",
+        nodeSelector: { matchLabels: { role: "worker" } },
+        ingress: [{ fromEntities: ["host"], toPorts: [{ ports: [{ port: "9100", protocol: "TCP" }] }] }],
+        egress: [{}],
+      },
+      {
+        endpointSelector: { matchLabels: { app: "dns" } },
+        egress: [{ toEntities: ["world"] }],
+      },
+    ],
+  };
+  const ccnpRows = buildSpecRows("CiliumClusterwideNetworkPolicy", ccnpDoc);
+  const ccnpSelectors = buildSelectorGroups(ccnpDoc);
+  assert.deepEqual(
+    ccnpSelectors.map((s) => s.label),
+    ["Rule 1 / Node selector", "Rule 2 / Endpoint selector"],
+  );
+  const r1Ingress = ccnpRows.find((r) => r.label === "Rule 1 / Ingress")?.value ?? "";
+  assert.ok(r1Ingress.includes("port=9100"));
+  assert.ok(!r1Ingress.includes("item(s)"));
+  assert.equal(ccnpRows.find((r) => r.label === "Rule 1 / Egress")?.value, "* (allow all)");
+  assert.ok(ccnpRows.find((r) => r.label === "Rule 2 / Egress")?.value.includes("toEntities=[world]"));
 
   const selectors = buildSelectorGroups({
     spec: {

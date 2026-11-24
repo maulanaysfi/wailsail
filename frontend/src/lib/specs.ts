@@ -24,10 +24,12 @@ export interface SelectorGroup {
 const MAX_CRD_ITEMS = 5;
 const MAX_CRD_DEPTH = 3;
 const MAX_CRD_ROWS = 48;
-const MAX_SUMMARY_KEYS = 4;
+const MAX_SUMMARY_DEPTH = 5;
+const MAX_SUMMARY_KEYS = 8;
 const SKIP_GENERIC_KEYS = new Set(["conditions", "openAPIV3Schema"]);
 const SKIP_TOP_LEVEL_KEYS = new Set(["apiVersion", "kind", "metadata", "spec", "status", "data", "binaryData", "stringData"]);
 const ACRONYM_MAP: Record<string, string> = {
+  bootid: "BootID",
   ip: "IP",
   ips: "IPs",
   cidr: "CIDR",
@@ -60,9 +62,11 @@ function isPlainObject(v: unknown): v is Record<string, any> {
 }
 
 function humanizeSegment(raw: string): string {
+  const exact = ACRONYM_MAP[raw.toLowerCase()];
+  if (exact) return exact;
   const words = raw
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+    .replace(/([A-Z]+)([A-Z](?:[a-rt-z]|[a-z]{2}))/g, "$1 $2")
     .split(/[\s_-]+/)
     .filter(Boolean);
   return words
@@ -112,7 +116,7 @@ function summarizeValue(v: unknown, depth = 0): string {
   if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") return String(v);
   if (Array.isArray(v)) {
     if (v.length === 0) return "[]";
-    if (depth >= 2) return `${v.length} item(s)`;
+    if (depth >= MAX_SUMMARY_DEPTH) return `${v.length} item(s)`;
     const shown = v.slice(0, MAX_CRD_ITEMS).map((item) => summarizeValue(item, depth + 1)).filter(Boolean);
     return v.length > MAX_CRD_ITEMS ? `[${shown.join(", ")}, +${v.length - MAX_CRD_ITEMS} more]` : `[${shown.join(", ")}]`;
   }
@@ -127,11 +131,12 @@ function summarizeValue(v: unknown, depth = 0): string {
     }
     const entries = Object.entries(v).filter(([, val]) => val !== null && val !== undefined);
     if (entries.length === 0) return "{}";
-    if (depth >= 2) return `{${entries.map(([k]) => k).slice(0, 3).join(", ")}}`;
+    if (depth >= MAX_SUMMARY_DEPTH) return `{${entries.map(([k]) => k).slice(0, 3).join(", ")}}`;
+    const maxKeys = depth === 0 ? MAX_SUMMARY_KEYS : 6;
     const parts = entries
-      .slice(0, MAX_SUMMARY_KEYS)
+      .slice(0, maxKeys)
       .map(([k, val]) => `${k}=${summarizeValue(val, depth + 1)}`);
-    if (entries.length > MAX_SUMMARY_KEYS) parts.push(`+${entries.length - MAX_SUMMARY_KEYS} more`);
+    if (entries.length > maxKeys) parts.push(`+${entries.length - maxKeys} more`);
     return parts.join(", ");
   }
   return String(v);
@@ -370,7 +375,10 @@ export function buildSpecRows(kind: string, obj: Record<string, any> | null): KV
     }
   } else {
     const selectorObjs = new Set<object>();
-    for (const g of collectSelectorNodes(spec)) selectorObjs.add(g.node);
+    for (const g of collectAllSelectorNodes(obj)) selectorObjs.add(g.node);
+
+    const isCidrBlocks = (key: string, val: unknown[]) =>
+      key === "blocks" && val.some((x) => isPlainObject(x) && ("cidr" in x || "start" in x || "stop" in x));
 
     const visit = (section: string, path: string[], val: unknown, depth: number) => {
       if (out.length >= MAX_CRD_ROWS || val === null || val === undefined) return;
@@ -378,8 +386,10 @@ export function buildSpecRows(kind: string, obj: Record<string, any> | null): KV
       if (SKIP_GENERIC_KEYS.has(key)) return;
       if (isPlainObject(val) && selectorObjs.has(val)) return;
 
-      const labelText =
-        path.length > 0 ? path.map(humanizeSegment).join(" / ") : humanizeSegment(section);
+      const labelParts = path.map((seg, i) =>
+        i === path.length - 1 && Array.isArray(val) && isCidrBlocks(seg, val) ? "CIDR Blocks" : humanizeSegment(seg),
+      );
+      const labelText = labelParts.length > 0 ? labelParts.join(" / ") : humanizeSegment(section);
       const safeLabel = (base: string) => (usedLabels.has(base) && section !== "spec" ? `${humanizeSegment(section)} / ${base}` : base);
 
       if (typeof val === "string" || typeof val === "number" || typeof val === "boolean") {
@@ -394,7 +404,13 @@ export function buildSpecRows(kind: string, obj: Record<string, any> | null): KV
       if (Array.isArray(val)) {
         if (val.length === 0) return;
         const allPrim = val.every((x) => typeof x === "string" || typeof x === "number" || typeof x === "boolean");
-        const items = val.map((x) => summarizeValue(x, 0)).filter(Boolean);
+        const isPolicyRuleList = /^(ingress|egress|ingressDeny|egressDeny)$/i.test(key);
+        const items = val
+          .map((x) => {
+            const s = summarizeValue(x, 0);
+            return isPolicyRuleList && s === "{}" ? "* (allow all)" : s;
+          })
+          .filter(Boolean);
         addList(safeLabel(labelText), items, {
           mono: allPrim ? val.some((x) => isMonoKeyOrValue(key, x)) : true,
           copy: allPrim ? val.some((x) => isCopyableKeyOrValue(key, x)) : /block|address|cidr|ip|endpoint/i.test(key),
@@ -432,8 +448,24 @@ export function buildSpecRows(kind: string, obj: Record<string, any> | null): KV
       }
     }
 
+    if (Array.isArray(obj.specs)) {
+      const rules = obj.specs.slice(0, MAX_CRD_ITEMS);
+      rules.forEach((rule, idx) => {
+        if (!isPlainObject(rule) || out.length >= MAX_CRD_ROWS) return;
+        const prefix = obj.specs.length === 1 ? [] : [`Rule ${idx + 1}`];
+        for (const [k, v] of Object.entries(rule)) {
+          if (out.length >= MAX_CRD_ROWS) break;
+          visit("spec", [...prefix, k], v, 1);
+        }
+      });
+      if (obj.specs.length > MAX_CRD_ITEMS) {
+        add("Additional rules", `+${obj.specs.length - MAX_CRD_ITEMS} more rule(s) in YAML`);
+      }
+    }
+
     for (const [k, v] of Object.entries(obj)) {
       if (out.length >= MAX_CRD_ROWS || SKIP_TOP_LEVEL_KEYS.has(k)) continue;
+      if (k === "specs" && Array.isArray(v)) continue;
       if (isPlainObject(v) && isStringMap(v)) {
         const pairs = Object.entries(v).map(([pk, pv]) => `${pk}=${pv}`);
         addList(humanizeSegment(k), pairs, { mono: true, separator: ", " });
@@ -446,17 +478,19 @@ export function buildSpecRows(kind: string, obj: Record<string, any> | null): KV
   return out;
 }
 
-function collectSelectorNodes(spec: Record<string, any>): Array<{ label: string; node: Record<string, any> }> {
+function collectSelectorNodes(spec: Record<string, any>, prefix = ""): Array<{ label: string; node: Record<string, any> }> {
   const found: Array<{ label: string; node: Record<string, any> }> = [];
   if (!isPlainObject(spec)) return found;
   for (const [k, v] of Object.entries(spec)) {
     if (k === "template") continue;
     if (isSelectorObject(k, v)) {
-      found.push({ label: k === "selector" ? "Selector" : humanizeSegment(k), node: v });
+      const base = k === "selector" ? "Selector" : humanizeSegment(k);
+      found.push({ label: prefix ? `${prefix} / ${base}` : base, node: v });
     } else if (isPlainObject(v)) {
       for (const [ck, cv] of Object.entries(v)) {
         if (isSelectorObject(ck, cv)) {
-          found.push({ label: `${humanizeSegment(k)} / ${humanizeSegment(ck)}`, node: cv });
+          const base = `${humanizeSegment(k)} / ${humanizeSegment(ck)}`;
+          found.push({ label: prefix ? `${prefix} / ${base}` : base, node: cv });
         }
       }
     }
@@ -464,13 +498,26 @@ function collectSelectorNodes(spec: Record<string, any>): Array<{ label: string;
   return found;
 }
 
-/** Extract labeled Kubernetes selector chip groups from spec (supports multiple CRD selectors). */
+function collectAllSelectorNodes(obj: Record<string, any> | null): Array<{ label: string; node: Record<string, any> }> {
+  if (!obj) return [];
+  const found = isPlainObject(obj.spec) ? collectSelectorNodes(obj.spec) : [];
+  if (Array.isArray(obj.specs)) {
+    obj.specs.slice(0, MAX_CRD_ITEMS).forEach((rule, idx) => {
+      if (!isPlainObject(rule)) return;
+      const prefix = obj.specs.length === 1 ? "" : `Rule ${idx + 1}`;
+      found.push(...collectSelectorNodes(rule, prefix));
+    });
+  }
+  return found;
+}
+
+/** Extract labeled Kubernetes selector chip groups from spec and specs rules. */
 export function buildSelectorGroups(obj: Record<string, any> | null): SelectorGroup[] {
-  const spec = (obj?.spec ?? {}) as Record<string, any>;
-  if (!isPlainObject(spec)) return [];
+  const nodes = collectAllSelectorNodes(obj);
+  if (nodes.length === 0) return [];
   const groups: SelectorGroup[] = [];
   const seenLabels = new Set<string>();
-  for (const { label, node } of collectSelectorNodes(spec)) {
+  for (const { label, node } of nodes) {
     let chips = extractSelectorChips(node);
     if (chips.length === 0 && /selector$/i.test(label) && Object.keys(node).length === 0) {
       chips = [{ value: "* (all)" }];
