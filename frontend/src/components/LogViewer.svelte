@@ -423,7 +423,9 @@
     display: flex;
     flex-direction: column;
     flex: 1;
+    min-width: 0;
     min-height: 0;
+    overflow: hidden;
   }
   .bar {
     display: flex;
@@ -434,6 +436,7 @@
     border-bottom: 1px solid var(--border);
     font-size: 12px;
     color: var(--muted);
+    min-width: 0;
   }
   .bar label {
     display: inline-flex;
@@ -443,9 +446,12 @@
   .search {
     margin-left: auto;
     width: 200px;
+    min-width: 120px;
+    max-width: 100%;
   }
   .out {
     flex: 1;
+    min-width: 0;
     overflow: auto;
     padding: var(--space-2) var(--space-3);
     font-family: var(--mono);
