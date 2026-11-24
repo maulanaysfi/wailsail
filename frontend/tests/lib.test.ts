@@ -15,6 +15,7 @@ import {
   buildContainersList,
   buildControlledPodsPlan,
   buildSelectorEntries,
+  buildSelectorGroups,
   buildSpecRows,
   filterControlledPods,
   podSummaryColumns,
@@ -323,4 +324,80 @@ test("computeLogWindow handles unwrapped and wrapped rows without blank overshoo
   assert.equal(unwrappedClamped.items.length, 10);
   assert.equal(unwrappedClamped.topPad, 0);
   assert.equal(unwrappedClamped.bottomPad, 0);
+});
+
+test("buildSpecRows and buildSelectorGroups render CRD specs cleanly with 5-item cap and CRD summary", () => {
+  const poolRows = buildSpecRows("CiliumLoadBalancerIPPool", {
+    spec: {
+      disabled: false,
+      allowFirstLastIPs: "Yes",
+      serviceSelector: { matchLabels: { env: "prod" }, matchExpressions: [{ key: "tier", operator: "In", values: ["web"] }] },
+      blocks: [
+        { cidr: "10.0.1.0/24" },
+        { cidr: "10.0.2.0/24" },
+        { cidr: "10.0.3.0/24" },
+        { cidr: "10.0.4.0/24" },
+        { cidr: "10.0.5.0/24" },
+        { start: "10.0.6.10", stop: "10.0.6.20" },
+      ],
+    },
+  });
+  const disabledRow = poolRows.find((r) => r.label === "Disabled");
+  assert.equal(disabledRow?.tone, "ok");
+  assert.equal(poolRows.some((r) => r.label.includes("Service selector")), false);
+  const blocksRow = poolRows.find((r) => r.label === "Blocks");
+  assert.ok(blocksRow);
+  assert.equal(blocksRow.moreCount, 1);
+  assert.ok(blocksRow.fullValue?.includes("start=10.0.6.10"));
+  assert.ok(!blocksRow.value.includes("item(s)"));
+
+  const selectors = buildSelectorGroups({
+    spec: {
+      endpointSelector: {},
+      serviceSelector: { matchLabels: { env: "prod" } },
+      egressGateway: { nodeSelector: { matchLabels: { role: "gw" } } },
+    },
+  });
+  assert.deepEqual(
+    selectors.map((s) => s.label),
+    ["Endpoint selector", "Service selector", "Egress gateway / Node selector"],
+  );
+  assert.equal(selectors[0].chips[0].value, "* (all)");
+  assert.deepEqual(selectors[1].chips[0], { key: "env", value: "prod" });
+
+  const envoyRows = buildSpecRows("CiliumEnvoyConfig", {
+    spec: {
+      nodeSelector: { matchLabels: { role: "edge" } },
+      resources: [{ "@type": "type.googleapis.com/envoy.config.listener.v3.Listener", name: "http-listener", hugeBlob: {} }],
+    },
+  });
+  assert.equal(envoyRows.find((r) => r.label === "Resources")?.value, "Listener: http-listener");
+
+  const identRows = buildSpecRows("CiliumIdentity", {
+    "security-labels": { "k8s:app": "web", "k8s:io.kubernetes.pod.namespace": "default" },
+  });
+  assert.equal(identRows[0]?.label, "Security labels");
+  assert.ok(identRows[0]?.value.includes("k8s:app=web"));
+
+  const crdRows = buildSpecRows("CustomResourceDefinition", {
+    spec: {
+      group: "cilium.io",
+      scope: "Cluster",
+      names: { kind: "CiliumNode", plural: "ciliumnodes", shortNames: ["cn"] },
+      versions: [
+        {
+          name: "v2",
+          served: true,
+          storage: true,
+          additionalPrinterColumns: [{ name: "CiliumInternalIP", type: "string" }],
+          schema: { openAPIV3Schema: { properties: { spec: { type: "object" } } } },
+        },
+      ],
+    },
+    status: { storedVersions: ["v2"] },
+  });
+  assert.equal(crdRows.find((r) => r.label === "Group")?.value, "cilium.io");
+  assert.equal(crdRows.find((r) => r.label === "Versions")?.value, "v2 (storage, served)");
+  assert.equal(crdRows.find((r) => r.label === "Printer columns")?.value, "CiliumInternalIP (string)");
+  assert.equal(crdRows.some((r) => r.label.toLowerCase().includes("schema")), false);
 });

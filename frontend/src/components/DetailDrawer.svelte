@@ -25,7 +25,7 @@
   import {
     buildContainersList,
     buildControlledPodsPlan,
-    buildSelectorEntries,
+    buildSelectorGroups,
     buildSpecRows,
     filterControlledPods,
     podSummaryColumns,
@@ -358,7 +358,7 @@
     revealedVals[id] = !revealedVals[id];
   }
 
-  const selectorEntries = $derived.by(() => buildSelectorEntries(obj));
+  const selectorGroups = $derived.by(() => buildSelectorGroups(obj));
   const containersList = $derived.by(() => buildContainersList(sel.type.kind, obj, metrics));
 
   const POD_PAGE_SIZE = 5;
@@ -987,29 +987,50 @@
           </dl>
         </section>
 
-        {#if specRows.length > 0 || selectorEntries.length > 0 || serviceFqdn}
+        {#if specRows.length > 0 || selectorGroups.length > 0 || serviceFqdn}
           <section class="section">
             <h4>Specification &amp; status</h4>
             <dl class="kv-grid">
               {#each specRows as r (r.label)}
+                {@const ek = `spec:${r.label}`}
+                {@const open = !!expandedMeta[ek]}
+                {@const displayVal = r.fullValue && open ? r.fullValue : r.value}
                 <dt>{r.label}</dt>
                 {#if r.copy}
                   <dd class="val-copy">
-                    {@render copyBtn(r.value, `spec:${r.label}`, r.label)}
-                    <span class={`val-text ${r.mono ? "mono " : ""}${r.tone ? `tone-${r.tone}` : ""}`}>{r.value}</span>
+                    {@render copyBtn(displayVal, ek, r.label)}
+                    <span class={`val-text ${r.mono ? "mono " : ""}${r.tone ? `tone-${r.tone}` : ""}`}>{displayVal}{#if r.fullValue}<button
+                          class="ellipsis-btn"
+                          onclick={() => toggleExpand(ek)}
+                          title={open ? `Collapse ${r.label}` : `Show all ${r.label} items`}
+                        >{open ? "(less)" : `(+${r.moreCount} more)`}</button>{/if}</span>
                   </dd>
                 {:else}
-                  <dd class={`val-text ${r.mono ? "mono " : ""}${r.tone ? `tone-${r.tone}` : ""}`}>{r.value}</dd>
+                  <dd class={`val-text ${r.mono ? "mono " : ""}${r.tone ? `tone-${r.tone}` : ""}`}>{displayVal}{#if r.fullValue}<button
+                        class="ellipsis-btn"
+                        onclick={() => toggleExpand(ek)}
+                        title={open ? `Collapse ${r.label}` : `Show all ${r.label} items`}
+                      >{open ? "(less)" : `(+${r.moreCount} more)`}</button>{/if}</dd>
                 {/if}
               {/each}
-              {#if selectorEntries.length > 0}
-                <dt>Selector</dt>
+              {#each selectorGroups as sg (sg.label)}
+                {@const ek = `sel:${sg.label}`}
+                {@const open = !!expandedMeta[ek]}
+                {@const shownChips = sg.chips.length > 5 && !open ? sg.chips.slice(0, 5) : sg.chips}
+                <dt>{sg.label}</dt>
                 <dd class="chips">
-                  {#each selectorEntries as [k, v] (k)}
-                    <span class="chip mono val-text"><span class="chip-k">{k}=</span>{v}</span>
+                  {#each shownChips as chip, ci (`${chip.key ?? ""}:${chip.value}:${ci}`)}
+                    <span class="chip mono val-text">{#if chip.key}<span class="chip-k">{chip.key}=</span>{/if}{chip.value}</span>
                   {/each}
+                  {#if sg.chips.length > 5}
+                    <button
+                      class="ellipsis-btn"
+                      onclick={() => toggleExpand(ek)}
+                      title={open ? `Collapse ${sg.label}` : `Show all ${sg.chips.length} selector items`}
+                    >{open ? "(less)" : `(+${sg.chips.length - 5} more)`}</button>
+                  {/if}
                 </dd>
-              {/if}
+              {/each}
               {#if serviceFqdn}
                 <dt>Cluster FQDN</dt>
                 <dd class="val-copy">

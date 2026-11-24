@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **CRD Structured Spec Rendering (`specs.ts`, `DetailDrawer`)**: Replaced generic `(N) item(s)` fallbacks with bounded structured `Specification & status` rendering for Cilium and other CRDs (flattening nested fields, summarizing object arrays and Envoy `@type` resources, summarizing `CustomResourceDefinition` without dumping `openAPIV3Schema`, rendering labeled selector `.chips` rows, and capping long lists at 5 items with an inline expand toggle).
 - **Aggregated Workload Logs (`logs.StartWorkload`, `LogViewer`, `DetailDrawer`)**: Added an aggregated `Logs` button in `DetailDrawer` for workloads (`Deployment`, `ReplicaSet`, `StatefulSet`, `DaemonSet`, `Job`, `CronJob`) streaming all main containers with a 15-pod safety cap, evenly split `TailLines`, automatic live following of newly created rollout Pods without reconnecting, and uniquely colored Pod name prefixes before each log line.
 - **Controlled Pods `Logs` & `Shell` Buttons (`DetailDrawer`)**: Added compact `Logs` and `Shell` text action buttons between `Name` and `Ready` on each row in `DetailDrawer`'s controlled `Pods` table.
 - **Log Viewer `Wrap` Toggle (`LogViewer`)**: Added a `Wrap` checkbox to toggle between single-line horizontal scrolling (`white-space: pre`) and word-wrapped lines (`white-space: pre-wrap; word-break: break-all`).
