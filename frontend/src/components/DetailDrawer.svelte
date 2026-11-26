@@ -1252,15 +1252,15 @@
                       }}
                     >
                       <td class="col-pod-name">
-                        <span class="pod-name mono val-text">{p.name}</span>
+                        <span class="pod-name mono">{p.name}</span>
                         {#if podsPlan.mode === "node" && p.namespace}
-                          <div class="mono muted pod-ns val-text">{p.namespace}</div>
+                          <div class="mono muted pod-ns">{p.namespace}</div>
                         {/if}
                       </td>
-                      <td class="col-pod-ready mono val-text" class:tone-warn={podUnready}>{podReady}</td>
-                      <td class={`col-pod-status val-text tone-${toneFor(podStatus)}`}>{podStatus}</td>
-                      <td class="col-pod-age mono muted val-text">{p.created ? age(p.created, app.now) : "—"}</td>
-                      <td class="col-pod-restarts mono val-text">{podRestarts}</td>
+                      <td class="col-pod-ready mono" class:tone-warn={podUnready}>{podReady}</td>
+                      <td class={`col-pod-status tone-${toneFor(podStatus)}`}>{podStatus}</td>
+                      <td class="col-pod-age mono muted">{p.created ? age(p.created, app.now) : "—"}</td>
+                      <td class="col-pod-restarts mono">{podRestarts}</td>
                     </tr>
                   {/each}
                 </tbody>
@@ -1810,6 +1810,8 @@
   }
   .pods-table {
     table-layout: fixed;
+    user-select: none;
+    -webkit-user-select: none;
   }
   .pods-table td {
     vertical-align: middle;
@@ -1848,12 +1850,11 @@
   .pods-table tbody tr.pod-row {
     cursor: pointer;
   }
-  .pods-table tbody tr.pod-row:hover,
-  .pods-table tbody tr.pod-row.focused {
+  .pods-table tbody tr.pod-row:hover {
     background: var(--hover);
   }
-  .pods-table tbody tr.pod-row.focused td:first-child {
-    box-shadow: inset 2px 0 0 var(--accent);
+  .pods-table tbody tr.pod-row.focused {
+    background: var(--selected);
   }
   .pod-name {
     display: block;

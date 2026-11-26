@@ -12,6 +12,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Log Timezone Setting (`settings`, `SettingsModal`, `LogViewer`)**: Added a persistent `Timezone` selector (`local` default, `UTC`, and IANA zones) converting Kubernetes log timestamps to `YYYY-MM-DD HH:mm:ss`.
 
 ### Changed
+- **Top Bar Order & Borderless Select Carets (`TopBar`, `style.css`)**: Placed `Namespace` on the left and grouped `[←] [→] [Refresh] [Theme] [Settings]` on the right of `TopBar`, and hid native `<select>` dropdown arrows globally (`appearance: none`).
+- **Controlled Pods Selection & Clean Row Highlight (`DetailDrawer`, `ResourceTable`)**: Made controlled `Pods` table cells non-selectable matching the main table, and removed the left blue border line on focused rows (using clean `var(--selected)` row highlight).
 - **Controlled Pods Focus & Table Actions (`DetailDrawer`)**: Switched controlled `Pods` rows to single-click highlight and double-click open (keeping Pod names plain monospace text), and removed row `Logs`/`Shell` action buttons.
 - **Bar Reorganization (`TopBar`, `App.svelte`)**: Removed the app icon from `TopBar`, moved the cluster status dot and Kubernetes version chip to the left of the bottom status bar, and moved `Apply` and `Forwards` to the right of the bottom status bar before `Dock`.
 - **Sidebar Context & Minimal Top Bar (`Sidebar`, `TopBar`)**: Moved the `Context` selector with a compact `Context` heading to the top of `Sidebar`, and removed the redundant `Namespace` label in `TopBar` leaving the dropdown alone.

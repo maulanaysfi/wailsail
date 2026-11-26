@@ -7,6 +7,24 @@
 </script>
 
 <header class="topbar">
+  <select
+    class="ns-select"
+    aria-label="Namespace"
+    value={app.namespace}
+    disabled={!app.current?.namespaced}
+    onchange={(e) => app.selectNamespace(e.currentTarget.value)}
+  >
+    <option value="">All namespaces</option>
+    {#if app.namespace && !app.namespaces.includes(app.namespace)}
+      <option value={app.namespace}>{app.namespace}</option>
+    {/if}
+    {#each app.namespaces as ns (ns)}
+      <option value={ns}>{ns}</option>
+    {/each}
+  </select>
+
+  <div class="spacer"></div>
+
   <div class="nav-btns">
     <button
       class="ghost icon"
@@ -31,24 +49,6 @@
       </svg>
     </button>
   </div>
-
-  <select
-    class="ns-select"
-    aria-label="Namespace"
-    value={app.namespace}
-    disabled={!app.current?.namespaced}
-    onchange={(e) => app.selectNamespace(e.currentTarget.value)}
-  >
-    <option value="">All namespaces</option>
-    {#if app.namespace && !app.namespaces.includes(app.namespace)}
-      <option value={app.namespace}>{app.namespace}</option>
-    {/if}
-    {#each app.namespaces as ns (ns)}
-      <option value={ns}>{ns}</option>
-    {/each}
-  </select>
-
-  <div class="spacer"></div>
 
   <button
     class="ghost icon"

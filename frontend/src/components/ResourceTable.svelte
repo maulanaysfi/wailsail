@@ -923,10 +923,7 @@
   tbody tr:not(.spacer):hover {
     background: var(--hover);
   }
-  tbody tr.focused {
-    background: var(--hover);
-    box-shadow: inset 2px 0 0 var(--accent);
-  }
+  tbody tr.focused,
   tbody tr.selected {
     background: var(--selected);
   }
