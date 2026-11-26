@@ -339,3 +339,20 @@ export function buildConfigDataEntries(obj: Record<string, any> | null, isSecret
 export function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
+
+export type ToastTone = "info" | "ok" | "warn" | "error";
+
+const TOAST_BASE_MS: Record<ToastTone, number> = {
+  info: 3500,
+  ok: 3500,
+  warn: 5500,
+  error: 8000,
+};
+
+/** Compute conditional auto-dismiss timeout (ms), extending past 10 words up to 18s. */
+export function toastTimeoutMs(text: string, tone: ToastTone = "info"): number {
+  const base = TOAST_BASE_MS[tone];
+  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+  if (words <= 10) return base;
+  return Math.min(18_000, base + (words - 10) * 250);
+}

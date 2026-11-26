@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Log Viewer `Wrap` Toggle (`LogViewer`)**: Added a `Wrap` checkbox to toggle between single-line horizontal scrolling (`white-space: pre`) and word-wrapped lines (`white-space: pre-wrap; word-break: break-all`).
 
 ### Changed
+- **Status Toasts & Connectivity Notifications (`App.svelte`, `store.svelte.ts`, `format.ts`)**: Replaced global top connectivity error banners with bottom-right status toasts (`info` blue, `ok` green, `warn` yellow, `error` red) featuring filled status icons, ease-in-out fade transitions, word-count-scaled conditional timeouts (`toastTimeoutMs`) that pause on hover/focus, wrapping for long unformatted messages without overflow, underlined `Copy` links on `warn`/`error` toasts, and a pinned connectivity toast with `Retry` until reconnected or dismissed (keeping inline modal/panel `.banner.error` blocks unchanged).
 - **Sibling CRD Spec Module (`crdSpecs.ts`, `specs.ts`)**: Split CRD spec flattening, acronym humanization, `CustomResourceDefinition` summary, and `buildSelectorGroups` out of `specs.ts` into `frontend/src/lib/crdSpecs.ts`.
 - **Controlled Pods Layout & Drawer Width (`DetailDrawer`)**: Moved the `Logs` / `Shell` action column (empty header) between `Name` and `Ready`, increased button gap (`8px`) and column gutters (`16px`) with middle alignment and `Restarts` flush-right, and widened default `DetailDrawer` width from `40vw` to `45vw`.
 

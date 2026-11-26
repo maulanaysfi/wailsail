@@ -8,6 +8,7 @@ import {
   decodeBase64Text,
   maskSecretKey,
   measureTextWidth,
+  toastTimeoutMs,
   toneFor,
 } from "../src/lib/format.ts";
 import { groupResources } from "../src/lib/resources.ts";
@@ -443,4 +444,19 @@ test("buildSpecRows and buildSelectorGroups render CRD specs cleanly with 5-item
   assert.equal(crdRows.find((r) => r.label === "Versions")?.value, "v2 (storage, served)");
   assert.equal(crdRows.find((r) => r.label === "Printer columns")?.value, "CiliumInternalIP (string)");
   assert.equal(crdRows.some((r) => r.label.toLowerCase().includes("schema")), false);
+});
+
+test("toastTimeoutMs scales timeouts conditionally above 10 words and caps at 18s", () => {
+  assert.equal(toastTimeoutMs("Pod deleted", "ok"), 3500);
+  assert.equal(toastTimeoutMs("Path already added", "info"), 3500);
+  assert.equal(toastTimeoutMs("Large action pending", "warn"), 5500);
+  assert.equal(toastTimeoutMs("Connection refused", "error"), 8000);
+
+  const twentyWords = Array.from({ length: 20 }, (_, i) => `word${i}`).join(" ");
+  assert.equal(toastTimeoutMs(twentyWords, "info"), 3500 + 10 * 250);
+  assert.equal(toastTimeoutMs(twentyWords, "warn"), 5500 + 10 * 250);
+  assert.equal(toastTimeoutMs(twentyWords, "error"), 8000 + 10 * 250);
+
+  const huge = Array.from({ length: 80 }, () => "token").join(" ");
+  assert.equal(toastTimeoutMs(huge, "error"), 18_000);
 });

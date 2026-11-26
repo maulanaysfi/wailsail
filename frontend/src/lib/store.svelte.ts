@@ -8,6 +8,7 @@ import {
   type ResourceType,
   type SettingsData,
 } from "./api";
+import { toastTimeoutMs, type ToastTone } from "./format";
 import { kindKey, resourceKey } from "./resources";
 
 export interface Selection {
@@ -36,8 +37,11 @@ export type DockTabInput = DistributiveOmit<DockTab, "id">;
 
 export interface Toast {
   id: number;
-  tone: "info" | "error" | "ok";
+  key?: string;
+  tone: ToastTone;
   text: string;
+  pinned?: boolean;
+  retryable?: boolean;
 }
 
 interface ConfirmRequest {
@@ -92,6 +96,8 @@ class AppState {
   now = $state(Date.now());
 
   #toastSeq = 0;
+  #toastTimers = new Map<number, { handle: ReturnType<typeof setTimeout> | null; remainingMs: number; startedAt: number }>();
+  #connToastDismissedText = "";
   #lastReplyAt = 0;
   #unansweredSince = 0;
   #probing = false;
@@ -123,7 +129,7 @@ class AppState {
       this.contexts = (await Kube.Contexts()) ?? [];
     } catch (e) {
       this.contexts = [];
-      this.connectionError = `Could not load kubeconfig: ${errorMessage(e)}`;
+      this.#setConnectionError(`Could not load kubeconfig: ${errorMessage(e)}`);
       return;
     }
     const names = this.contexts.map((c) => c.name);
@@ -150,7 +156,8 @@ class AppState {
     this.resources = [];
     this.namespaces = [];
     this.serverVersion = "";
-    this.connectionError = "";
+    this.#connToastDismissedText = "";
+    this.#setConnectionError("");
     this.saveSettings({ lastContext: name });
 
     const saved = this.settings.lastNamespace?.[name];
@@ -167,7 +174,9 @@ class AppState {
     try {
       await this.#hydrateContext(name, wantResKey, wantSelection);
     } catch (e) {
-      if (this.context === name) this.connectionError = errorMessage(e);
+      if (this.context === name) {
+        this.#setConnectionError(`Could not connect to ${name || "kubeconfig"}: ${errorMessage(e)}`);
+      }
     } finally {
       if (this.context === name) {
         this.resourcesLoading = false;
@@ -193,7 +202,7 @@ class AppState {
       if (this.context !== name) return; // switched meanwhile
       this.#lastReplyAt = Date.now();
       this.#unansweredSince = 0;
-      this.connectionError = "";
+      this.#setConnectionError("");
       this.serverVersion = version;
       this.resources = resources ?? [];
       this.namespaces = namespaces ?? [];
@@ -221,7 +230,8 @@ class AppState {
         this.#lastReplyAt = Date.now();
         this.#unansweredSince = 0;
         if (v) this.serverVersion = v;
-        this.connectionError = "";
+        this.#setConnectionError("");
+        if (wasOffline) this.toast(`Connected to ${ctx}`, "ok");
         if (needsHydration) {
           const wantResKey = this.current ? resourceKey(this.current) : "";
           void this.#hydrateContext(ctx, wantResKey, this.selection)
@@ -258,6 +268,7 @@ class AppState {
       const elapsed = Date.now() - this.#unansweredSince;
       if (elapsed >= 30_000) {
         this.clusterStatus = "disconnected";
+        this.#syncConnToast(`Lost connection to ${this.context} (retrying…)`);
         return;
       }
       if (elapsed >= 5_000) {
@@ -266,6 +277,22 @@ class AppState {
       }
     }
     this.clusterStatus = this.#lastReplyAt > 0 ? "connected" : "slow";
+  }
+
+  #setConnectionError(msg: string) {
+    this.connectionError = msg;
+    this.#syncConnToast(msg);
+  }
+
+  #syncConnToast(msg: string) {
+    if (!msg) {
+      this.#connToastDismissedText = "";
+      const existing = this.toasts.find((t) => t.key === "cluster-conn");
+      if (existing) this.dismissToast(existing.id);
+      return;
+    }
+    if (this.#connToastDismissedText === msg) return;
+    this.toast(msg, "error", { key: "cluster-conn", pinned: true, retryable: !!this.context });
   }
 
   selectNamespace(ns: string) {
@@ -379,12 +406,13 @@ class AppState {
     this.resources = [];
     this.namespaces = [];
     this.serverVersion = "";
-    this.connectionError = "";
+    this.#connToastDismissedText = "";
+    this.#setConnectionError("");
     try {
       this.contexts = (await Kube.Contexts()) ?? [];
     } catch (e) {
       this.contexts = [];
-      this.connectionError = `Could not load kubeconfig: ${errorMessage(e)}`;
+      this.#setConnectionError(`Could not load kubeconfig: ${errorMessage(e)}`);
       return;
     }
     const names = this.contexts.map((c) => c.name);
@@ -458,13 +486,81 @@ class AppState {
     this.dockOpen = false;
   }
 
-  toast(text: string, tone: Toast["tone"] = "info") {
-    const id = ++this.#toastSeq;
-    this.toasts = [...this.toasts, { id, tone, text }];
-    setTimeout(() => this.dismissToast(id), tone === "error" ? 8000 : 3500);
+  #scheduleToastTimer(id: number, ms: number) {
+    this.#clearToastTimer(id);
+    const handle = setTimeout(() => {
+      this.#toastTimers.delete(id);
+      this.dismissToast(id, false);
+    }, ms);
+    this.#toastTimers.set(id, { handle, remainingMs: ms, startedAt: Date.now() });
   }
 
-  dismissToast(id: number) {
+  #clearToastTimer(id: number) {
+    const t = this.#toastTimers.get(id);
+    if (!t) return;
+    if (t.handle) clearTimeout(t.handle);
+    this.#toastTimers.delete(id);
+  }
+
+  pauseToast(id: number) {
+    const t = this.#toastTimers.get(id);
+    if (!t || !t.handle) return;
+    clearTimeout(t.handle);
+    const elapsed = Date.now() - t.startedAt;
+    this.#toastTimers.set(id, {
+      handle: null,
+      remainingMs: Math.max(400, t.remainingMs - elapsed),
+      startedAt: Date.now(),
+    });
+  }
+
+  resumeToast(id: number) {
+    const entry = this.#toastTimers.get(id);
+    if (!entry) return;
+    this.#scheduleToastTimer(id, entry.remainingMs);
+  }
+
+  toast(
+    text: string,
+    tone: ToastTone = "info",
+    opts?: { key?: string; pinned?: boolean; retryable?: boolean },
+  ) {
+    const existing = opts?.key ? this.toasts.find((t) => t.key === opts.key) : undefined;
+    if (existing) {
+      if (
+        existing.text === text &&
+        existing.tone === tone &&
+        !!existing.pinned === !!opts?.pinned &&
+        !!existing.retryable === !!opts?.retryable
+      ) {
+        return;
+      }
+      this.#clearToastTimer(existing.id);
+      this.toasts = this.toasts.map((t) =>
+        t.id === existing.id
+          ? { ...t, text, tone, pinned: opts?.pinned, retryable: opts?.retryable }
+          : t,
+      );
+      if (!opts?.pinned) this.#scheduleToastTimer(existing.id, toastTimeoutMs(text, tone));
+      return;
+    }
+
+    const id = ++this.#toastSeq;
+    this.toasts = [
+      ...this.toasts,
+      { id, key: opts?.key, tone, text, pinned: opts?.pinned, retryable: opts?.retryable },
+    ];
+    if (!opts?.pinned) {
+      this.#scheduleToastTimer(id, toastTimeoutMs(text, tone));
+    }
+  }
+
+  dismissToast(id: number, byUser = true) {
+    this.#clearToastTimer(id);
+    const target = this.toasts.find((t) => t.id === id);
+    if (byUser && target?.key === "cluster-conn") {
+      this.#connToastDismissedText = target.text;
+    }
     this.toasts = this.toasts.filter((t) => t.id !== id);
   }
 
