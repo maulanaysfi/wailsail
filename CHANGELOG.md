@@ -4,7 +4,7 @@ All notable changes to **`wailsail`** are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.2.1-beta] - 2026-11-26
 
 ### Added
 - **CRD Structured Spec Rendering (`specs.ts`, `DetailDrawer`)**: Replaced generic `(N) item(s)` fallbacks with bounded structured `Specification & status` rendering for Cilium and other CRDs (flattening nested fields, summarizing object arrays and Envoy `@type` resources, summarizing `CustomResourceDefinition` without dumping `openAPIV3Schema`, rendering labeled selector `.chips` rows, and capping long lists at 5 items with an inline expand toggle).
