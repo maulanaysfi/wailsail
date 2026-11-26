@@ -29,6 +29,11 @@ export interface Settings {
     "logTimestamps": boolean;
 
     /**
+     * "local", "UTC", or IANA timezone (e.g. "Asia/Jakarta")
+     */
+    "logTimezone": string;
+
+    /**
      * resource keys "group/resource"
      */
     "pinned": string[] | null;

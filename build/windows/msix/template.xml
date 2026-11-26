@@ -17,7 +17,7 @@
         PackageDisplayName="wailsail"
         PublisherName="CN=wailsail"
         PublisherDisplayName="wailsail"
-        Version="0.2.1.0"
+        Version="0.3.0.0"
         PackageDescription="An original Kubernetes desktop client written in Go with Wails v3">
         <Capabilities>
             <Capability Name="runFullTrust" />

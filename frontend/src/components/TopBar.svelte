@@ -1,63 +1,113 @@
 <script lang="ts">
+  import { abbreviateKind } from "../lib/resources";
   import { app } from "../lib/store.svelte";
+  import { formatPageTabTitle } from "../lib/tabs";
 
   const themeLabel: Record<string, string> = { system: "System", light: "Light", dark: "Dark" };
   const theme = $derived(themeLabel[app.settings.theme] ? app.settings.theme : "system");
   const nextTheme: Record<string, string> = { system: "Light", light: "Dark", dark: "System" };
+  const mainTabLabel = $derived(app.current ? abbreviateKind(app.current.kind) : "Resources");
 </script>
 
 <header class="topbar">
-  <img class="logo" src="/icon.png" alt="wailsail" width="24" height="24" />
+  <select
+    class="ns-select"
+    aria-label="Namespace"
+    value={app.namespace}
+    disabled={!app.current?.namespaced}
+    onchange={(e) => app.selectNamespace(e.currentTarget.value)}
+  >
+    <option value="">All namespaces</option>
+    {#if app.namespace && !app.namespaces.includes(app.namespace)}
+      <option value={app.namespace}>{app.namespace}</option>
+    {/if}
+    {#each app.namespaces as ns (ns)}
+      <option value={ns}>{ns}</option>
+    {/each}
+  </select>
 
-  <label class="field">
-    <span>Context</span>
-    <select value={app.context} onchange={(e) => app.selectContext(e.currentTarget.value)}>
-      {#if app.contexts.length === 0}<option value="">No contexts</option>{/if}
-      {#each app.contexts as c (c.name)}
-        <option value={c.name}>{c.name}</option>
-      {/each}
-    </select>
-  </label>
-
-  <label class="field">
-    <span>Namespace</span>
-    <select
-      value={app.namespace}
-      disabled={!app.current?.namespaced}
-      onchange={(e) => app.selectNamespace(e.currentTarget.value)}
+  {#if app.pageTabs.length > 0}
+    <div
+      class="tab-strip"
+      onwheel={(e) => {
+        if (e.deltaY && !e.deltaX && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) {
+          e.currentTarget.scrollLeft += e.deltaY;
+          e.preventDefault();
+        }
+      }}
     >
-      <option value="">All namespaces</option>
-      {#if app.namespace && !app.namespaces.includes(app.namespace)}
-        <option value={app.namespace}>{app.namespace}</option>
-      {/if}
-      {#each app.namespaces as ns (ns)}
-        <option value={ns}>{ns}</option>
+      <div class="tab" class:active={!app.activePageTab}>
+        <button
+          class="label"
+          onclick={() => app.activateMainTab()}
+          title={`Browse ${mainTabLabel}`}
+        >
+          <span class="tab-title">{mainTabLabel}</span>
+        </button>
+      </div>
+      {#each app.pageTabs as t (t.id)}
+        <div class="tab" class:active={app.activePageTab === t.id}>
+          <button
+            class="label"
+            onclick={() => app.activatePageTab(t.id)}
+            title={`${formatPageTabTitle(t.selection)}${t.selection.namespace ? ` (${t.selection.namespace})` : ""}`}
+          >
+            <span class="tab-title">{formatPageTabTitle(t.selection)}</span>
+          </button>
+          <button
+            class="x"
+            onclick={() => app.closePageTab(t.id)}
+            title={`Close ${t.selection.name} tab`}
+            aria-label={`Close ${t.selection.name} tab`}
+          >
+            ✕
+          </button>
+        </div>
       {/each}
-    </select>
-  </label>
-
-  {#if app.context}
-    <span class="cluster-pill">
-      <span class={`conn-dot ${app.clusterStatus}`}></span>
-      {#if app.serverVersion}
-        <span class="pill">{app.serverVersion}</span>
-      {/if}
-    </span>
+    </div>
+  {:else}
+    <div class="spacer"></div>
   {/if}
 
-  <div class="spacer"></div>
+  {#if app.pageTabs.length > 0}
+    <button
+      class="ghost icon danger"
+      onclick={() => app.closeAllPageTabs()}
+      title="Close all tabs"
+      aria-label="Close all tabs"
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <line x1="18" y1="6" x2="6" y2="18" />
+        <line x1="6" y1="6" x2="18" y2="18" />
+      </svg>
+    </button>
+  {/if}
 
-  <button
-    class="ghost"
-    onclick={() => (app.showApply = true)}
-    disabled={!app.context}
-    title="Apply YAML or JSON manifest to current cluster"
-  >
-    Apply
-  </button>
-  <button class="ghost" onclick={() => (app.showForwards = true)} title="Manage active local port forwards">
-    Forwards
-  </button>
+  <div class="nav-btns">
+    <button
+      class="ghost icon"
+      disabled={!app.canGoBack}
+      onclick={() => app.goBack()}
+      title="Back"
+      aria-label="Back"
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <polyline points="15 18 9 12 15 6" />
+      </svg>
+    </button>
+    <button
+      class="ghost icon"
+      disabled={!app.canGoForward}
+      onclick={() => app.goForward()}
+      title="Forward"
+      aria-label="Forward"
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <polyline points="9 18 15 12 9 6" />
+      </svg>
+    </button>
+  </div>
+
   <button
     class="ghost icon"
     onclick={() => app.reload()}
@@ -109,50 +159,72 @@
     border-bottom: 1px solid var(--border);
     background: var(--panel);
   }
-  .logo {
-    border-radius: var(--radius);
-    object-fit: contain;
-    background: transparent;
-    display: block;
-    margin-right: var(--space-2);
-  }
-  .field {
-    display: flex;
+  .nav-btns {
+    display: inline-flex;
     align-items: center;
-    gap: var(--space-2);
-    font-size: 12px;
-    color: var(--muted);
-    margin-right: var(--space-2);
+    gap: var(--space-1);
   }
-  .field select {
+  .ns-select {
     min-width: 184px;
     max-width: 280px;
     height: var(--control-h);
-  }
-  .cluster-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
-  .conn-dot {
-    width: var(--space-2);
-    height: var(--space-2);
-    border-radius: 999px;
-    background: var(--muted);
-  }
-  .conn-dot.connected {
-    background: var(--ok);
-  }
-  .conn-dot.slow {
-    background: var(--warn);
-  }
-  .conn-dot.disconnected {
-    background: var(--bad);
+    margin-right: var(--space-2);
   }
   .topbar > button {
     height: var(--control-h);
   }
   .spacer {
     flex: 1;
+  }
+  .tab-strip {
+    display: flex;
+    align-items: stretch;
+    height: 100%;
+    flex: 1;
+    min-width: 0;
+    gap: var(--space-1);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tab-strip::-webkit-scrollbar {
+    display: none;
+  }
+  .tab {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    border-bottom: 2px solid transparent;
+    font-size: 12px;
+  }
+  .tab.active {
+    border-bottom-color: var(--accent);
+    color: var(--text-strong);
+  }
+  .label,
+  .x {
+    all: unset;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-2);
+    white-space: nowrap;
+  }
+  .label:focus-visible,
+  .x:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+  .tab-title {
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .x {
+    color: var(--muted);
+  }
+  .x:hover {
+    color: var(--text-strong);
   }
 </style>

@@ -10,16 +10,17 @@ func TestRoundTrip(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "sub", "settings.json")
 	s := NewService(p)
 	st, err := s.Get()
-	if err != nil || st.LogTailLines != 500 {
+	if err != nil || st.LogTailLines != 500 || st.LogTimezone != DefaultTimezone {
 		t.Fatalf("defaults: %+v %v", st, err)
 	}
 	st.LastContext = "kind"
 	st.LastNamespace["kind"] = "default"
+	st.LogTimezone = "Asia/Jakarta"
 	if err := s.Save(st); err != nil {
 		t.Fatal(err)
 	}
 	got, err := s.Get()
-	if err != nil || got.LastContext != "kind" || got.LastNamespace["kind"] != "default" {
+	if err != nil || got.LastContext != "kind" || got.LastNamespace["kind"] != "default" || got.LogTimezone != "Asia/Jakarta" {
 		t.Fatalf("%+v %v", got, err)
 	}
 	if err := os.WriteFile(p, []byte("{garbage"), 0o600); err != nil {
@@ -72,7 +73,7 @@ func TestScaleAndKubeconfigPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ = s.Get()
-	if got.Theme != "dark" || got.Scale != 100 || len(got.KubeconfigPaths) != 1 {
+	if got.Theme != "dark" || got.Scale != 100 || got.LogTimezone != DefaultTimezone || len(got.KubeconfigPaths) != 1 {
 		t.Fatalf("legacy file: %+v", got)
 	}
 }

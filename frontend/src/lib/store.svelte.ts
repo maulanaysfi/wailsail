@@ -9,13 +9,19 @@ import {
   type SettingsData,
 } from "./api";
 import { toastTimeoutMs, type ToastTone } from "./format";
+import { pushNavEntry, type NavEntry, type NavState } from "./nav";
 import { kindKey, resourceKey } from "./resources";
+import {
+  closePageTabState,
+  findTabBySelection,
+  navigatePageTab,
+  openOrFocusTab,
+  selectionKey,
+  type PageTab,
+  type Selection,
+} from "./tabs";
 
-export interface Selection {
-  type: ResourceType;
-  namespace: string;
-  name: string;
-}
+export type { PageTab, Selection } from "./tabs";
 
 export type DockStatus = "connecting" | "connected" | "disconnected";
 
@@ -59,13 +65,14 @@ const defaultSettings: SettingsData = {
   lastNamespace: {},
   logTailLines: 500,
   logTimestamps: false,
+  logTimezone: "local",
   pinned: [],
   columnOrders: {},
   columnWidths: {},
 };
 
 export const scaleOptions = [50, 75, 100, 125, 150] as const;
-export const APP_VERSION = "v0.2.1 (beta)";
+export const APP_VERSION = "v0.3.0 (beta)";
 
 class AppState {
   contexts = $state<ContextInfo[]>([]);
@@ -79,6 +86,8 @@ class AppState {
   resourcesLoading = $state(false);
   current = $state<ResourceType | null>(null);
   selection = $state<Selection | null>(null);
+  pageTabs = $state<PageTab[]>([]);
+  activePageTab = $state<string | null>(null);
   dock = $state<DockTab[]>([]);
   dockStatuses = $state<Record<string, DockStatus>>({});
   activeDock = $state("");
@@ -91,9 +100,27 @@ class AppState {
   showSettings = $state(false);
   defaultKubeconfigPath = $state("");
   forwardTarget = $state<Selection | null>(null);
+  scaleTarget = $state<{ sel: Selection; replicas: number } | null>(null);
+  editOnOpen = $state(false);
   cancelYamlEdit: (() => void) | null = null;
   reconnectNonce = $state(0);
   now = $state(Date.now());
+  #nav = $state<NavState>({ entries: [], index: -1 });
+  #pageTabSeq = 0;
+
+  get activeTab(): PageTab | null {
+    return this.activePageTab ? (this.pageTabs.find((t) => t.id === this.activePageTab) ?? null) : null;
+  }
+
+  get canGoBack(): boolean {
+    const nav = this.activeTab?.nav ?? this.#nav;
+    return nav.index > 0;
+  }
+
+  get canGoForward(): boolean {
+    const nav = this.activeTab?.nav ?? this.#nav;
+    return nav.index >= 0 && nav.index < nav.entries.length - 1;
+  }
 
   #toastSeq = 0;
   #toastTimers = new Map<number, { handle: ReturnType<typeof setTimeout> | null; remainingMs: number; startedAt: number }>();
@@ -145,17 +172,23 @@ class AppState {
 
   async selectContext(
     name: string,
-    opts?: { preserveResourceKey?: string; preserveSelection?: Selection | null },
+    opts?: { preserveResourceKey?: string; preserveSelection?: Selection | null; preserveTabs?: boolean },
   ) {
     const wantResKey = opts?.preserveResourceKey ?? (this.current ? resourceKey(this.current) : "");
     const wantSelection = opts?.preserveSelection !== undefined ? opts.preserveSelection : (this.context === name ? this.selection : null);
 
+    const isSwitch = this.context !== name;
     this.context = name;
     this.selection = null;
     this.current = null;
     this.resources = [];
     this.namespaces = [];
     this.serverVersion = "";
+    if (isSwitch && !opts?.preserveTabs) {
+      this.#nav = { entries: [], index: -1 };
+      this.pageTabs = [];
+      this.activePageTab = null;
+    }
     this.#connToastDismissedText = "";
     this.#setConnectionError("");
     this.saveSettings({ lastContext: name });
@@ -211,6 +244,9 @@ class AppState {
       this.current = preserved ?? pods ?? this.resources[0] ?? null;
       if (wantSelection && this.current && resourceKey(wantSelection.type) === resourceKey(this.current)) {
         this.selection = { ...wantSelection, type: this.current };
+      }
+      if (this.current && this.#nav.entries.length === 0) {
+        this.#recordNav();
       }
     } finally {
       this.#hydrating = false;
@@ -295,6 +331,79 @@ class AppState {
     this.toast(msg, "error", { key: "cluster-conn", pinned: true, retryable: !!this.context });
   }
 
+  #recordNav() {
+    if (!this.current) return;
+    const entry: NavEntry = {
+      resourceKey: resourceKey(this.current),
+      selection: this.selection
+        ? {
+            resourceKey: resourceKey(this.selection.type),
+            namespace: this.selection.namespace,
+            name: this.selection.name,
+          }
+        : null,
+    };
+    this.#nav = pushNavEntry(this.#nav, entry);
+  }
+
+  #applyNavEntry(entry: NavEntry) {
+    const res = this.resources.find((r) => resourceKey(r) === entry.resourceKey);
+    if (!res) return;
+    this.current = res;
+    if (!entry.selection) {
+      this.selection = null;
+      return;
+    }
+    const selType = this.resources.find((r) => resourceKey(r) === entry.selection!.resourceKey) ?? res;
+    if (selType.namespaced && this.namespace !== "" && this.namespace !== entry.selection.namespace) {
+      this.namespace = entry.selection.namespace;
+    }
+    this.selection = { type: selType, namespace: entry.selection.namespace, name: entry.selection.name };
+  }
+
+  #resolveTabSelection(entry: NavEntry): Selection | null {
+    if (!entry.selection) return null;
+    const selType = this.resources.find((r) => resourceKey(r) === entry.selection!.resourceKey);
+    if (!selType) return null;
+    if (selType.namespaced && this.namespace !== "" && this.namespace !== entry.selection.namespace) {
+      this.namespace = entry.selection.namespace;
+    }
+    return { type: selType, namespace: entry.selection.namespace, name: entry.selection.name };
+  }
+
+  #stepActiveTab(delta: -1 | 1) {
+    const tab = this.activeTab;
+    if (!tab) return;
+    const nextIdx = tab.nav.index + delta;
+    if (nextIdx < 0 || nextIdx >= tab.nav.entries.length) return;
+    const nextSel = this.#resolveTabSelection(tab.nav.entries[nextIdx]) ?? tab.selection;
+    this.pageTabs = this.pageTabs.map((t) =>
+      t.id === tab.id ? { ...t, selection: nextSel, nav: { ...t.nav, index: nextIdx } } : t,
+    );
+  }
+
+  goBack() {
+    if (!this.canGoBack) return;
+    if (this.activeTab) {
+      this.#stepActiveTab(-1);
+      return;
+    }
+    const nextIdx = this.#nav.index - 1;
+    this.#nav = { ...this.#nav, index: nextIdx };
+    this.#applyNavEntry(this.#nav.entries[nextIdx]);
+  }
+
+  goForward() {
+    if (!this.canGoForward) return;
+    if (this.activeTab) {
+      this.#stepActiveTab(1);
+      return;
+    }
+    const nextIdx = this.#nav.index + 1;
+    this.#nav = { ...this.#nav, index: nextIdx };
+    this.#applyNavEntry(this.#nav.entries[nextIdx]);
+  }
+
   selectNamespace(ns: string) {
     this.namespace = ns;
     this.selection = null;
@@ -305,10 +414,48 @@ class AppState {
   selectResource(r: ResourceType) {
     this.current = r;
     this.selection = null;
+    this.activePageTab = null;
+    this.#recordNav();
   }
 
-  jumpToResource(ref: { apiVersion?: string; kind: string; name: string } | undefined | null, namespace: string) {
-    if (!ref?.kind || !ref?.name) return;
+  selectObject(sel: Selection) {
+    this.selection = sel;
+    this.#recordNav();
+  }
+
+  closeSelection() {
+    this.selection = null;
+  }
+
+  openPageTab(sel: Selection) {
+    const next = openOrFocusTab(this.pageTabs, sel, () => `page-${++this.#pageTabSeq}`);
+    this.pageTabs = next.tabs;
+    this.activePageTab = next.activeId;
+  }
+
+  activateMainTab() {
+    this.activePageTab = null;
+  }
+
+  activatePageTab(id: string) {
+    if (this.pageTabs.some((t) => t.id === id)) {
+      this.activePageTab = id;
+    }
+  }
+
+  closePageTab(id: string) {
+    const next = closePageTabState(this.pageTabs, this.activePageTab, id);
+    this.pageTabs = next.tabs;
+    this.activePageTab = next.activeId;
+  }
+
+  closeAllPageTabs() {
+    this.pageTabs = [];
+    this.activePageTab = null;
+  }
+
+  #resolveTarget(ref: { apiVersion?: string; kind: string; name: string } | undefined | null, namespace: string): Selection | null {
+    if (!ref?.kind || !ref?.name) return null;
     const parts = (ref.apiVersion ?? "").split("/");
     const group = parts.length > 1 ? parts[0] : "";
     const target =
@@ -316,18 +463,42 @@ class AppState {
       this.resources.find((r) => r.kind === ref.kind);
     if (!target) {
       this.toast(`Resource kind ${ref.kind} not found`, "error");
-      return;
+      return null;
     }
     const ns = target.namespaced ? namespace : "";
-    if (target.namespaced && this.namespace !== "" && this.namespace !== ns) {
-      this.namespace = ns;
+    return { type: target, namespace: ns, name: ref.name };
+  }
+
+  #navigateToSelection(sel: Selection) {
+    if (sel.type.namespaced && this.namespace !== "" && this.namespace !== sel.namespace) {
+      this.namespace = sel.namespace;
     }
-    this.current = target;
-    this.selection = { type: target, namespace: ns, name: ref.name };
+    if (this.activeTab) {
+      this.pageTabs = navigatePageTab(this.pageTabs, this.activeTab.id, sel);
+      return;
+    }
+    this.current = sel.type;
+    this.selection = sel;
+    this.#recordNav();
+  }
+
+  jumpToResource(ref: { apiVersion?: string; kind: string; name: string } | undefined | null, namespace: string) {
+    const sel = this.#resolveTarget(ref, namespace);
+    if (sel) this.#navigateToSelection(sel);
   }
 
   jumpToOwner(owner: { apiVersion?: string; kind: string; name: string } | undefined | null, namespace: string) {
-    this.jumpToResource(owner, namespace);
+    const sel = this.#resolveTarget(owner, namespace);
+    if (!sel) return;
+    const existing = findTabBySelection(this.pageTabs, sel);
+    if (existing) {
+      if (sel.type.namespaced && this.namespace !== "" && this.namespace !== sel.namespace) {
+        this.namespace = sel.namespace;
+      }
+      this.activePageTab = existing.id;
+      return;
+    }
+    this.#navigateToSelection(sel);
   }
 
   isPinned(r: ResourceType) {
@@ -421,7 +592,11 @@ class AppState {
       await this.selectContext(pick, {
         preserveResourceKey: prevResKey,
         preserveSelection: pick === prev ? prevSelection : null,
+        preserveTabs: pick === prev,
       });
+    } else {
+      this.pageTabs = [];
+      this.activePageTab = null;
     }
   }
 
@@ -573,6 +748,71 @@ class AppState {
   answerConfirm(ok: boolean) {
     this.confirmRequest?.resolve(ok);
     this.confirmRequest = null;
+  }
+
+  openEdit(sel: Selection) {
+    this.editOnOpen = true;
+    if (this.activeTab) {
+      this.pageTabs = navigatePageTab(this.pageTabs, this.activeTab.id, sel);
+      return;
+    }
+    this.selectObject({ ...sel });
+  }
+
+  async scaleResource(sel: Selection, n: number): Promise<boolean> {
+    if (!Number.isInteger(n) || n < 0) {
+      this.toast("Replicas must be a non-negative integer", "error");
+      return false;
+    }
+    try {
+      await Kube.Scale(this.context, refOf(sel.type), sel.namespace, sel.name, n);
+      this.toast(`Scaled ${sel.name} to ${n}`, "ok");
+      return true;
+    } catch (e) {
+      this.toast(errorMessage(e), "error");
+      return false;
+    }
+  }
+
+  async restartResource(sel: Selection): Promise<boolean> {
+    if (!(await this.confirm(`Restart ${sel.name}?`, "Pods will be replaced following the rollout strategy."))) {
+      return false;
+    }
+    try {
+      await Kube.Restart(this.context, refOf(sel.type), sel.namespace, sel.name);
+      this.toast(`Restart of ${sel.name} triggered`, "ok");
+      return true;
+    } catch (e) {
+      this.toast(errorMessage(e), "error");
+      return false;
+    }
+  }
+
+  async deleteResource(sel: Selection): Promise<boolean> {
+    const isHelm = sel.type.group === "helm.sh" && sel.type.resource === "releases";
+    const where = sel.namespace ? ` in namespace ${sel.namespace}` : "";
+    const verb = isHelm ? "Uninstall" : "Delete";
+    const pastVerb = isHelm ? "uninstalled" : "deleted";
+    if (!(await this.confirm(`${verb} ${sel.type.kind}?`, `${sel.name}${where} will be ${pastVerb}.`, true))) {
+      return false;
+    }
+    try {
+      await Kube.Delete(this.context, refOf(sel.type), sel.namespace, sel.name);
+      this.toast(`${sel.type.kind} ${sel.name} ${pastVerb}`, "ok");
+      const deletedKey = selectionKey(sel);
+      if (this.selection && selectionKey(this.selection) === deletedKey) {
+        this.selection = null;
+      }
+      for (const tab of this.pageTabs) {
+        if (selectionKey(tab.selection) === deletedKey) {
+          this.closePageTab(tab.id);
+        }
+      }
+      return true;
+    } catch (e) {
+      this.toast(errorMessage(e), "error");
+      return false;
+    }
   }
 }
 

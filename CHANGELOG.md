@@ -4,6 +4,33 @@ All notable changes to **`wailsail`** are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+## [0.3.0-beta] - 2026-11-26
+
+### Added
+- **Multi-Page Object Tabs (`TopBar`, `DetailDrawer`, `RowContextMenu`, `store.svelte.ts`, `tabs.ts`)**: Added `View in new tab` at the top of the row right-click menu opening `DetailDrawer` in full-page mode inside a `BottomDock`-style scrollable tab strip between `Namespace` and the top bar action buttons, labeling tabs as `<Kind>/<name>` with ellipsis truncation, deduplicating repeated opens, adding a red close-all `✕` button next to navigation controls when tabs are open, and redirecting `Jump to Owner` to matching already-open owner tabs.
+- **Top Bar History Navigation (`TopBar`, `store.svelte.ts`, `nav.ts`)**: Added `←` / `→` Back and Forward navigation buttons in `TopBar` stepping through visited resource types and opened objects (excluding namespace changes and drawer closes, disabled when at history bounds).
+- **Row Context Menu & Scale Modal (`ResourceTable`, `App.svelte`, `store.svelte.ts`)**: Added themed right-click action menus on resource rows with icons matching `DetailDrawer` (`Jump to Owner`, `Port forward`, `Scale`, `Restart`, `View logs`, `Exec shell`, `Edit YAML`/`Edit values`, `Delete`/`Uninstall`), plus a centered `Scale` modal supporting arrow keys and `Enter` to apply.
+- **Log Timezone Setting (`settings`, `SettingsModal`, `LogViewer`)**: Added a persistent `Timezone` selector (`local` default, `UTC`, and IANA zones) converting Kubernetes log timestamps to `YYYY-MM-DD HH:mm:ss`.
+
+### Changed
+- **Controlled Pods Context Menu (`DetailDrawer`, `RowContextMenu`)**: Added right-click Pod actions matching `ResourceTable` (`Jump to Owner`, `Port forward`, `View logs`, `Exec shell`, `Edit YAML`, `Delete`) via a shared `RowContextMenu` component.
+- **Context Selector in Settings (`SettingsModal`, `Sidebar`)**: Moved the cluster `Context` dropdown from `Sidebar` to the top of the `Kubeconfig` section in `Settings`.
+- **Top Bar Order & Borderless Select Carets (`TopBar`, `style.css`)**: Placed `Namespace` on the left and grouped `[←] [→] [Refresh] [Theme] [Settings]` on the right of `TopBar`, and hid native `<select>` dropdown arrows globally (`appearance: none`).
+- **Controlled Pods Selection & Clean Row Highlight (`DetailDrawer`, `ResourceTable`)**: Made controlled `Pods` table cells non-selectable matching the main table, and removed the left blue border line on focused rows (using clean `var(--selected)` row highlight).
+- **Controlled Pods Focus & Table Actions (`DetailDrawer`)**: Switched controlled `Pods` rows to single-click highlight and double-click open (keeping Pod names plain monospace text), and removed row `Logs`/`Shell` action buttons.
+- **Bar Reorganization (`TopBar`, `App.svelte`)**: Removed the app icon from `TopBar`, moved the cluster status dot and Kubernetes version chip to the left of the bottom status bar, and moved `Apply` and `Forwards` to the right of the bottom status bar before `Dock`.
+- **Sidebar Context & Minimal Top Bar (`Sidebar`, `TopBar`)**: Moved the `Context` selector with a compact `Context` heading to the top of `Sidebar`, and removed the redundant `Namespace` label in `TopBar` leaving the dropdown alone.
+- **Plain Controlled Pod Names & Port-Forward Icon (`DetailDrawer`, `ResourceTable`)**: Styled controlled Pod name buttons cleanly (`var(--text-strong)`, monospace, no blue color or hover underline) matching the main table, and updated the context menu `Port forward` icon to a box-with-arrow `forward` icon.
+- **Double-Click `DetailDrawer` Toggle & Single-Click Focus (`ResourceTable`)**: Single-clicking a row highlights it as focused/active while double-clicking toggles `DetailDrawer`.
+- **Disable Pinch/Browser Zoom (`index.html`, `style.css`, `App.svelte`)**: Blocked trackpad pinch-to-zoom (`wheel` with `ctrlKey`/`metaKey`, `gesturestart`/`gesturechange`, `touch-action: pan-x pan-y`) and keyboard zoom shortcuts so viewport zoom stays controlled cleanly via `Settings -> Screen scale`.
+- **Undraggable App Logo (`TopBar`)**: Marked the top bar `/icon.png` logo non-draggable (`draggable="false"`, `-webkit-user-drag: none`, `user-select: none`).
+- **Port Forward Remote Port Input (`PortForwardModal`)**: Showed only the discovered ports dropdown when container/service ports exist, falling back to the numeric input only when no ports are declared (`ports.length === 0`).
+
+### Fixed
+- **Deletion Confirmation Grammar (`store.svelte.ts`)**: Fixed `"deleteed"` typo in delete confirmation dialogs and toast messages (`"deleted"` / `"uninstalled"`).
+
 ## [0.2.1-beta] - 2026-11-26
 
 ### Added

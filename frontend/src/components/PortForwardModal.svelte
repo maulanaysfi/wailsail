@@ -87,8 +87,9 @@
                 </option>
               {/each}
             </select>
+          {:else}
+            <input type="number" min="1" max="65535" bind:value={remotePort} />
           {/if}
-          <input type="number" min="1" max="65535" bind:value={remotePort} />
         </label>
         <label>
           Local port <span class="hint">(0 = auto)</span>
@@ -145,6 +146,10 @@
     flex-direction: column;
     gap: var(--space-1);
     font-size: 12px;
+  }
+  .form input,
+  .form select {
+    min-width: 112px;
   }
   .form input {
     width: 112px;

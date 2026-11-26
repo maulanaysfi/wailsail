@@ -19,6 +19,7 @@ type Settings struct {
 	LastNamespace   map[string]string `json:"lastNamespace"` // per context; "" = all namespaces
 	LogTailLines    int64               `json:"logTailLines"`
 	LogTimestamps   bool                `json:"logTimestamps"`
+	LogTimezone     string              `json:"logTimezone"` // "local", "UTC", or IANA timezone (e.g. "Asia/Jakarta")
 	Pinned          []string            `json:"pinned"`       // resource keys "group/resource"
 	ColumnOrders    map[string][]string `json:"columnOrders"` // per resource key column order
 	ColumnWidths    map[string]int      `json:"columnWidths"` // "<resourceKey>:<colLabel>" -> width in px
@@ -26,6 +27,9 @@ type Settings struct {
 
 // DefaultScale is the UI scale used when none (or an invalid one) is stored.
 const DefaultScale = 100
+
+// DefaultTimezone is the timezone used for log timestamps when unset.
+const DefaultTimezone = "local"
 
 // ValidScales lists the selectable UI scales in percent.
 var ValidScales = []int{50, 75, 100, 125, 150}
@@ -48,6 +52,7 @@ func Defaults() Settings {
 		KubeconfigPaths: []string{DefaultKubeconfigPath()},
 		LastNamespace:   map[string]string{},
 		LogTailLines:    500,
+		LogTimezone:     DefaultTimezone,
 		Pinned:          []string{},
 		ColumnOrders:    map[string][]string{},
 		ColumnWidths:    map[string]int{},
@@ -67,6 +72,9 @@ func validScale(v int) bool {
 func (st *Settings) normalize() {
 	if !validScale(st.Scale) {
 		st.Scale = DefaultScale
+	}
+	if st.LogTimezone == "" {
+		st.LogTimezone = DefaultTimezone
 	}
 	if st.KubeconfigPaths == nil {
 		st.KubeconfigPaths = []string{DefaultKubeconfigPath()}

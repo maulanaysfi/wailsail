@@ -15,6 +15,7 @@
   import { age, buildResourceMeter, clearMeasureTextCache, compareCells, measureTextWidth, toneFor, type ResourceMeter } from "../lib/format";
   import { kindKey, resourceKey } from "../lib/resources";
   import { unreadyWorkloadCells, workloadColumnIndices } from "../lib/specs";
+  import RowContextMenu, { buildRowMenuItems } from "./RowContextMenu.svelte";
 
   const ROW_H = 32;
   const MIN_COL_W = 48;
@@ -39,6 +40,8 @@
   let dropAfter = $state(false);
   let headerRowEl: HTMLTableRowElement | undefined = $state();
   let fontGen = $state(0);
+  let focusedKey = $state("");
+  let menu = $state<{ row: Row; x: number; y: number } | null>(null);
 
   $effect(() => {
     if (typeof document === "undefined" || !document.fonts) return;
@@ -72,6 +75,8 @@
       loading = true;
       error = "";
       scrollTop = 0;
+      focusedKey = "";
+      menu = null;
       version++;
     });
     const id = newStreamId();
@@ -420,15 +425,36 @@
   function select(r: Row) {
     if (!app.current) return;
     if (isSelected(r)) {
-      app.selection = null;
+      app.closeSelection();
       return;
     }
-    app.selection = { type: app.current, namespace: r.namespace, name: r.name };
+    app.selectObject({ type: app.current, namespace: r.namespace, name: r.name });
   }
 
   function isSelected(r: Row) {
     const s = app.selection;
     return !!s && s.name === r.name && s.namespace === r.namespace;
+  }
+
+  function inferReplicas(r: Row): number {
+    const dIdx = workloadColIdx.desiredIdx;
+    if (dIdx >= 0 && /^\d+$/.test((r.cells[dIdx] ?? "").trim())) {
+      return Number(r.cells[dIdx].trim());
+    }
+    const rIdx = workloadColIdx.readyIdx;
+    if (rIdx >= 0) {
+      const m = /^\d+\s*\/\s*(\d+)$/.exec((r.cells[rIdx] ?? "").trim());
+      if (m) return Number(m[1]);
+    }
+    return 1;
+  }
+
+  function openContextMenu(e: MouseEvent, r: Row) {
+    if (!app.current) return;
+    e.preventDefault();
+    focusedKey = r.key;
+    const z = cssZoom();
+    menu = { row: r, x: Math.round(e.clientX / z), y: Math.round(e.clientY / z) };
   }
 </script>
 
@@ -466,7 +492,14 @@
     <div class="banner error">{error}</div>
   {/if}
 
-  <div class="grid-wrap" bind:clientHeight={viewportH} onscroll={(e) => (scrollTop = e.currentTarget.scrollTop)}>
+  <div
+    class="grid-wrap"
+    bind:clientHeight={viewportH}
+    onscroll={(e) => {
+      scrollTop = e.currentTarget.scrollTop;
+      if (menu) menu = null;
+    }}
+  >
     <table style={`width:${totalTableW}px`}>
       <colgroup>
         {#each displayCols as c (c.key)}
@@ -503,7 +536,16 @@
         {#if first > 0}<tr class="spacer" style={`height:${first * ROW_H}px`}></tr>{/if}
         {#each visible as r (r.key)}
           {@const unready = unreadyWorkloadCells(curKindKey, r.cells, workloadColIdx)}
-          <tr class:selected={isSelected(r)} onclick={() => select(r)}>
+          <tr
+            class:selected={isSelected(r)}
+            class:focused={focusedKey === r.key}
+            onclick={() => (focusedKey = r.key)}
+            ondblclick={() => {
+              focusedKey = r.key;
+              select(r);
+            }}
+            oncontextmenu={(e) => openContextMenu(e, r)}
+          >
             {#each displayCols as c (c.key)}
               {#if c.meter}
                 <td>{@render cellMeter(podMeterFor(r, c.meter), maxMeterPx[c.meter])}</td>
@@ -531,6 +573,15 @@
       <p class="empty">{filter ? "No matches" : "No resources"}</p>
     {/if}
   </div>
+
+  {#if menu && app.current}
+    <RowContextMenu
+      items={buildRowMenuItems(app.current, menu.row, inferReplicas)}
+      x={menu.x}
+      y={menu.y}
+      onClose={() => (menu = null)}
+    />
+  {/if}
 </section>
 
 <style>
@@ -668,6 +719,7 @@
   tbody tr:not(.spacer):hover {
     background: var(--hover);
   }
+  tbody tr.focused,
   tbody tr.selected {
     background: var(--selected);
   }

@@ -11,6 +11,7 @@
     type EventInfo,
     type HelmReleaseDetail,
     type ResourceRef,
+    type ResourceType,
     type Row,
     type WatchEvent,
   } from "../lib/api";
@@ -32,9 +33,10 @@
     unreadyWorkloadCells,
   } from "../lib/specs";
   import { kindKey, restartableKinds, scalableKinds } from "../lib/resources";
+  import RowContextMenu, { buildRowMenuItems } from "./RowContextMenu.svelte";
   import YamlEditor from "./YamlEditor.svelte";
 
-  let { sel }: { sel: Selection } = $props();
+  let { sel, fullPage = false, onClose }: { sel: Selection; fullPage?: boolean; onClose?: () => void } = $props();
 
   let tab = $state<"overview" | "yaml" | "manifest">("overview");
   let obj = $state<Record<string, any> | null>(null);
@@ -133,6 +135,20 @@
   let loadedKey = "";
 
   $effect(() => {
+    if (!app.editOnOpen || loading) return;
+    if (error) {
+      untrack(() => (app.editOnOpen = false));
+      return;
+    }
+    if (isHelmRelease ? helmDetail : yaml) {
+      untrack(() => {
+        app.editOnOpen = false;
+        startEdit();
+      });
+    }
+  });
+
+  $effect(() => {
     app.reconnectNonce;
     if (error && !editing && !loading) {
       untrack(() => load());
@@ -162,6 +178,8 @@
       revealedKeys = {};
       revealedVals = {};
       podPage = 0;
+      focusedPodKey = "";
+      podMenu = null;
       revPage = 0;
       load();
     });
@@ -225,16 +243,7 @@
   }
 
   async function remove() {
-    const where = sel.namespace ? ` in namespace ${sel.namespace}` : "";
-    const verb = isHelmRelease ? "Uninstall" : "Delete";
-    if (!(await app.confirm(`${verb} ${sel.type.kind}?`, `${sel.name}${where} will be ${verb.toLowerCase()}ed.`, true))) return;
-    try {
-      await Kube.Delete(app.context, refOf(sel.type), sel.namespace, sel.name);
-      app.toast(`${sel.type.kind} ${sel.name} ${verb.toLowerCase()}ed`, "ok");
-      app.selection = null;
-    } catch (e) {
-      app.toast(errorMessage(e), "error");
-    }
+    await app.deleteResource(sel);
   }
 
   async function rollbackHelm(rev: number) {
@@ -270,29 +279,19 @@
   }
 
   async function scale() {
-    const n = replicas;
-    if (n == null || !Number.isInteger(n) || n < 0) {
+    if (replicas == null) {
       app.toast("Replicas must be a non-negative integer", "error");
       return;
     }
-    try {
-      await Kube.Scale(app.context, refOf(sel.type), sel.namespace, sel.name, n);
-      app.toast(`Scaled ${sel.name} to ${n}`, "ok");
+    if (await app.scaleResource(sel, replicas)) {
       replicas = null;
       load();
-    } catch (e) {
-      app.toast(errorMessage(e), "error");
     }
   }
 
   async function restart() {
-    if (!(await app.confirm(`Restart ${sel.name}?`, "Pods will be replaced following the rollout strategy."))) return;
-    try {
-      await Kube.Restart(app.context, refOf(sel.type), sel.namespace, sel.name);
-      app.toast(`Restart of ${sel.name} triggered`, "ok");
+    if (await app.restartResource(sel)) {
       load();
-    } catch (e) {
-      app.toast(errorMessage(e), "error");
     }
   }
 
@@ -377,6 +376,27 @@
   let podLoading = $state(false);
   let podError = $state("");
   let podPage = $state(0);
+  let focusedPodKey = $state("");
+  let podMenu = $state<{ row: Row; x: number; y: number } | null>(null);
+
+  const podResourceType: ResourceType = $derived(
+    app.resources.find((x) => kindKey(x) === "/Pod") ?? {
+      group: "",
+      version: "v1",
+      resource: "pods",
+      kind: "Pod",
+      namespaced: true,
+      shortNames: ["po"],
+      verbs: [],
+    },
+  );
+
+  function openPodMenu(e: MouseEvent, p: Row) {
+    e.preventDefault();
+    focusedPodKey = p.key;
+    const z = cssZoom();
+    podMenu = { row: p, x: Math.round(e.clientX / z), y: Math.round(e.clientY / z) };
+  }
 
   const podsPlan = $derived.by(() => buildControlledPodsPlan(kk, obj, sel.namespace));
   const podsPlanKey = $derived(
@@ -599,15 +619,23 @@
   </div>
 {/snippet}
 
-<aside class="drawer" style={`width:${width}px`}>
-  <div class="resizer" onpointerdown={startResize} role="separator" aria-orientation="vertical"></div>
+<aside class="drawer" class:full-page={fullPage} style={fullPage ? undefined : `width:${width}px`}>
+  {#if !fullPage}
+    <div class="resizer" onpointerdown={startResize} role="separator" aria-orientation="vertical"></div>
+  {/if}
   <header>
     <div class="title">
       <span class="kind">{sel.type.kind}</span>
       <strong>{sel.name}</strong>
       {#if sel.namespace}<span class="ns">{sel.namespace}</span>{/if}
     </div>
-    <button class="ghost close" onclick={() => (app.selection = null)} title="Close detail panel (Esc)">✕</button>
+    <button
+      class="ghost close"
+      onclick={() => (onClose ? onClose() : app.closeSelection())}
+      title={fullPage ? "Close tab" : "Close detail panel (Esc)"}
+    >
+      ✕
+    </button>
   </header>
 
   <div class="actions">
@@ -756,7 +784,7 @@
   {#if error}<div class="banner error">{error}</div>{/if}
 
   {#if tab === "overview"}
-    <div class="overview">
+    <div class="overview" onscroll={() => (podMenu = null)}>
       {#if isHelmRelease}
         {#if loading && !helmDetail}
           <p class="empty">Loading…</p>
@@ -1228,7 +1256,6 @@
                 <thead>
                   <tr>
                     <th class="col-pod-name">Name</th>
-                    <th class="col-pod-act"></th>
                     <th class="col-pod-ready">Ready</th>
                     <th class="col-pod-status">Status</th>
                     <th class="col-pod-age">Age</th>
@@ -1248,63 +1275,38 @@
                     }).ready}
                     <tr
                       class="pod-row"
-                      onclick={() => {
-                        if (!window.getSelection()?.toString()) {
-                          app.jumpToResource({ kind: "Pod", name: p.name }, p.namespace);
-                        }
+                      class:focused={focusedPodKey === p.key}
+                      onclick={() => (focusedPodKey = p.key)}
+                      ondblclick={() => {
+                        focusedPodKey = p.key;
+                        app.jumpToResource({ kind: "Pod", name: p.name }, p.namespace);
                       }}
+                      oncontextmenu={(e) => openPodMenu(e, p)}
                     >
                       <td class="col-pod-name">
-                        <button
-                          class="pod-link mono val-text"
-                          onclick={(e) => {
-                            e.stopPropagation();
-                            if (!window.getSelection()?.toString()) {
-                              app.jumpToResource({ kind: "Pod", name: p.name }, p.namespace);
-                            }
-                          }}
-                          title={`Open Pod ${p.namespace ? `${p.namespace}/` : ""}${p.name}`}
-                        >
-                          {p.name}
-                        </button>
+                        <span class="pod-name mono">{p.name}</span>
                         {#if podsPlan.mode === "node" && p.namespace}
-                          <div class="mono muted pod-ns val-text">{p.namespace}</div>
+                          <div class="mono muted pod-ns">{p.namespace}</div>
                         {/if}
                       </td>
-                      <td class="col-pod-act">
-                        <div class="pod-acts">
-                          <button
-                            class="mini"
-                            onclick={(e) => {
-                              e.stopPropagation();
-                              openPodDock(p.name, p.namespace, "logs");
-                            }}
-                            title={`View logs for Pod ${p.name}`}
-                          >
-                            Logs
-                          </button>
-                          <button
-                            class="mini"
-                            onclick={(e) => {
-                              e.stopPropagation();
-                              openPodDock(p.name, p.namespace, "shell");
-                            }}
-                            title={`Open shell in Pod ${p.name}`}
-                          >
-                            Shell
-                          </button>
-                        </div>
-                      </td>
-                      <td class="col-pod-ready mono val-text" class:tone-warn={podUnready}>{podReady}</td>
-                      <td class={`col-pod-status val-text tone-${toneFor(podStatus)}`}>{podStatus}</td>
-                      <td class="col-pod-age mono muted val-text">{p.created ? age(p.created, app.now) : "—"}</td>
-                      <td class="col-pod-restarts mono val-text">{podRestarts}</td>
+                      <td class="col-pod-ready mono" class:tone-warn={podUnready}>{podReady}</td>
+                      <td class={`col-pod-status tone-${toneFor(podStatus)}`}>{podStatus}</td>
+                      <td class="col-pod-age mono muted">{p.created ? age(p.created, app.now) : "—"}</td>
+                      <td class="col-pod-restarts mono">{podRestarts}</td>
                     </tr>
                   {/each}
                 </tbody>
               </table>
             {/if}
           </section>
+          {#if podMenu}
+            <RowContextMenu
+              items={buildRowMenuItems(podResourceType, podMenu.row)}
+              x={podMenu.x}
+              y={podMenu.y}
+              onClose={() => (podMenu = null)}
+            />
+          {/if}
         {/if}
 
         <section class="section">
@@ -1393,6 +1395,10 @@
     min-width: 0;
     min-height: 0;
     overflow: hidden;
+  }
+  .drawer.full-page {
+    width: 100%;
+    border-left: 0;
   }
   .resizer {
     position: absolute;
@@ -1848,6 +1854,8 @@
   }
   .pods-table {
     table-layout: fixed;
+    user-select: none;
+    -webkit-user-select: none;
   }
   .pods-table td {
     vertical-align: middle;
@@ -1883,39 +1891,22 @@
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
   }
-  .pods-table .col-pod-act {
-    width: 112px;
-    padding-right: var(--space-3);
-    white-space: nowrap;
-  }
-  .pod-acts {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
   .pods-table tbody tr.pod-row {
     cursor: pointer;
   }
   .pods-table tbody tr.pod-row:hover {
     background: var(--hover);
   }
-  .pod-link {
-    all: unset;
+  .pods-table tbody tr.pod-row.focused {
+    background: var(--selected);
+  }
+  .pod-name {
     display: block;
     width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--accent);
-    cursor: pointer;
-  }
-  .pod-link:hover {
-    text-decoration: underline;
-  }
-  .pod-link:focus-visible {
-    outline: 1px solid var(--accent);
-    outline-offset: 1px;
-    border-radius: 2px;
+    color: var(--text-strong);
   }
   .pod-ns {
     font-size: 11px;

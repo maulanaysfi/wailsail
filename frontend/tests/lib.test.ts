@@ -6,12 +6,22 @@ import {
   buildResourceMeter,
   clearMeasureTextCache,
   decodeBase64Text,
+  formatLogTimestamp,
   maskSecretKey,
   measureTextWidth,
+  timezoneOptions,
   toastTimeoutMs,
   toneFor,
 } from "../src/lib/format.ts";
 import { groupResources } from "../src/lib/resources.ts";
+import {
+  closePageTabState,
+  findTabBySelection,
+  formatPageTabTitle,
+  navigatePageTab,
+  openOrFocusTab,
+  type PageTab,
+} from "../src/lib/tabs.ts";
 import {
   buildContainersList,
   buildControlledPodsPlan,
@@ -25,6 +35,7 @@ import {
 import { buildSelectorGroups } from "../src/lib/crdSpecs.ts";
 import { tokenizeYaml, tokenizeYamlLine } from "../src/lib/yamlHighlight.ts";
 import { computeLogWindow, entryOffset, type LogEntryItem } from "../src/lib/logWindow.ts";
+import { pushNavEntry, type NavState } from "../src/lib/nav.ts";
 
 test("maskSecretKey masks keys after first 4 chars and short keys as ****", () => {
   assert.equal(maskSecretKey(""), "****");
@@ -459,4 +470,88 @@ test("toastTimeoutMs scales timeouts conditionally above 10 words and caps at 18
 
   const huge = Array.from({ length: 80 }, () => "token").join(" ");
   assert.equal(toastTimeoutMs(huge, "error"), 18_000);
+});
+
+test("formatLogTimestamp converts RFC3339 timestamps to selected timezone as YYYY-MM-DD HH:mm:ss", () => {
+  assert.equal(formatLogTimestamp("2026-11-26T04:30:12.123456Z ", "UTC"), "2026-11-26 04:30:12 ");
+  assert.equal(formatLogTimestamp("2026-11-26T04:30:12.123456Z ", "Asia/Jakarta"), "2026-11-26 11:30:12 ");
+  assert.equal(formatLogTimestamp("2026-11-26T17:05:09Z", "UTC"), "2026-11-26 17:05:09");
+  assert.equal(formatLogTimestamp("2026-11-26T00:05:09Z ", "UTC"), "2026-11-26 00:05:09 ");
+  assert.equal(formatLogTimestamp("2026-11-26T04:30:12Z ", "Invalid/Zone"), "2026-11-26T04:30:12Z ");
+
+  const zones = timezoneOptions();
+  assert.equal(zones[0].value, "local");
+  assert.equal(zones[1].value, "UTC");
+  assert.ok(zones.some((z) => z.value === "Asia/Jakarta"));
+});
+
+test("pushNavEntry tracks resource and object visits while deduplicating and truncating forward branch", () => {
+  let nav: NavState = { entries: [], index: -1 };
+  nav = pushNavEntry(nav, { resourceKey: "/pods", selection: null });
+  nav = pushNavEntry(nav, { resourceKey: "/pods", selection: null }); // duplicate skipped
+  assert.equal(nav.entries.length, 1);
+  assert.equal(nav.index, 0);
+
+  nav = pushNavEntry(nav, {
+    resourceKey: "apps/deployments",
+    selection: { resourceKey: "apps/deployments", namespace: "default", name: "web" },
+  });
+  nav = pushNavEntry(nav, {
+    resourceKey: "/pods",
+    selection: { resourceKey: "/pods", namespace: "default", name: "web-1" },
+  });
+  assert.equal(nav.index, 2);
+
+  // Simulate stepping Back to index 1 then visiting a new resource.
+  nav = pushNavEntry({ ...nav, index: 1 }, { resourceKey: "/services", selection: null });
+  assert.equal(nav.entries.length, 3);
+  assert.equal(nav.index, 2);
+  assert.equal(nav.entries[2].resourceKey, "/services");
+});
+
+test("page tab helpers open/deduplicate, format prefix, find tabs, navigate history, and close to adjacent tab", () => {
+  const podType = { group: "", version: "v1", resource: "pods", kind: "Pod", namespaced: true };
+  const depType = { group: "apps", version: "v1", resource: "deployments", kind: "Deployment", namespaced: true };
+  const pvcType = { group: "", version: "v1", resource: "persistentvolumeclaims", kind: "PersistentVolumeClaim", namespaced: true };
+  let seq = 0;
+  const makeId = () => `page-${++seq}`;
+
+  assert.equal(formatPageTabTitle({ type: podType, namespace: "default", name: "web-0" }), "Pod/web-0");
+  assert.equal(formatPageTabTitle({ type: pvcType, namespace: "default", name: "data-vol" }), "PVC/data-vol");
+
+  let tabs: PageTab[] = [];
+  let activeId: string | null = null;
+
+  const first = openOrFocusTab(tabs, { type: depType, namespace: "default", name: "web" }, makeId);
+  tabs = first.tabs;
+  activeId = first.activeId;
+  assert.equal(tabs.length, 1);
+  assert.equal(activeId, "page-1");
+
+  const dup = openOrFocusTab(tabs, { type: depType, namespace: "default", name: "web" }, makeId);
+  assert.equal(dup.tabs.length, 1);
+  assert.equal(dup.activeId, "page-1");
+  assert.equal(findTabBySelection(tabs, { type: depType, namespace: "default", name: "web" })?.id, "page-1");
+  assert.equal(findTabBySelection(tabs, { type: depType, namespace: "default", name: "other" }), undefined);
+
+  const second = openOrFocusTab(tabs, { type: podType, namespace: "default", name: "web-0" }, makeId);
+  tabs = second.tabs;
+  activeId = second.activeId;
+  assert.equal(tabs.length, 2);
+  assert.equal(activeId, "page-2");
+
+  tabs = navigatePageTab(tabs, "page-2", { type: depType, namespace: "default", name: "api" });
+  assert.equal(tabs[1].selection.name, "api");
+  assert.equal(tabs[1].nav.entries.length, 2);
+  assert.equal(tabs[1].nav.index, 1);
+
+  const closedSecond = closePageTabState(tabs, activeId, "page-2");
+  tabs = closedSecond.tabs;
+  activeId = closedSecond.activeId;
+  assert.equal(tabs.length, 1);
+  assert.equal(activeId, "page-1");
+
+  const closedFirst = closePageTabState(tabs, activeId, "page-1");
+  assert.equal(closedFirst.tabs.length, 0);
+  assert.equal(closedFirst.activeId, null);
 });

@@ -42,7 +42,7 @@
 │   ├── bindings/           # Auto-generated Wails v3 TS bindings (do not hand-edit)
 │   └── src/
 │       ├── App.svelte
-│       ├── lib/            # api.ts, crdSpecs.ts, format.ts, logWindow.ts, resources.ts, specs.ts, store.svelte.ts, yamlHighlight.ts
+│       ├── lib/            # api.ts, crdSpecs.ts, format.ts, logWindow.ts, nav.ts, resources.ts, specs.ts, store.svelte.ts, yamlHighlight.ts
 │       └── components/     # TopBar, Sidebar, ResourceTable, DetailDrawer, YamlEditor, BottomDock, LogViewer, TerminalView, modals
 ├── build/                  # Wails v3 config.yml, icons, desktop/installer packaging templates
 ├── scripts/                # Build, test, validation, and SHA256SUMS release script (build.sh)
@@ -113,7 +113,7 @@ flowchart LR
 
 ### `internal/settings`
 - `Service`: `Get() (Settings, error)`, `Save(st Settings) error` with atomic temp-file writes to `<UserConfigDir>/wailsail/settings.json`, and `DefaultKubeconfig() string`.
-- `Settings` includes `scale` (UI zoom percent: 50/75/100/125/150, default 100, applied via `Window.SetZoom` or CSS `zoom` for `<100%`), `kubeconfigPaths` (default `[<home>/.kube/config]`, applied at startup in `main.go`), `columnOrders`, and `columnWidths` (persisted per-resource table column ordering and widths).
+- `Settings` includes `scale` (UI zoom percent: 50/75/100/125/150, default 100, applied via `Window.SetZoom` or CSS `zoom` for `<100%`), `kubeconfigPaths` (default `[<home>/.kube/config]`, applied at startup in `main.go`), `logTimezone` (default `"local"`, formatting Kubernetes log timestamps as `YYYY-MM-DD HH:mm:ss`), `columnOrders`, and `columnWidths` (persisted per-resource table column ordering and widths).
 
 ### Frontend conventions
 - Font: bundled Google Sans Flex (`frontend/public/fonts/`, OFL) via `--sans`.
