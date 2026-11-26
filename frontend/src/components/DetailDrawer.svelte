@@ -1850,7 +1850,6 @@
   }
   .pods-table .col-pod-name {
     min-width: 0;
-    padding-left: var(--space-2);
     padding-right: var(--space-3);
   }
   .pods-table .col-pod-ready {
@@ -1874,9 +1873,9 @@
     font-variant-numeric: tabular-nums;
   }
   .pods-table .col-pod-restarts {
-    width: 66px;
+    width: 60px;
     text-align: right;
-    padding-right: var(--space-2);
+    padding-right: 0;
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
   }
