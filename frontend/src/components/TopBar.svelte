@@ -9,32 +9,21 @@
 <header class="topbar">
   <img class="logo" src="/icon.png" alt="wailsail" width="24" height="24" draggable="false" />
 
-  <label class="field">
-    <span>Context</span>
-    <select value={app.context} onchange={(e) => app.selectContext(e.currentTarget.value)}>
-      {#if app.contexts.length === 0}<option value="">No contexts</option>{/if}
-      {#each app.contexts as c (c.name)}
-        <option value={c.name}>{c.name}</option>
-      {/each}
-    </select>
-  </label>
-
-  <label class="field">
-    <span>Namespace</span>
-    <select
-      value={app.namespace}
-      disabled={!app.current?.namespaced}
-      onchange={(e) => app.selectNamespace(e.currentTarget.value)}
-    >
-      <option value="">All namespaces</option>
-      {#if app.namespace && !app.namespaces.includes(app.namespace)}
-        <option value={app.namespace}>{app.namespace}</option>
-      {/if}
-      {#each app.namespaces as ns (ns)}
-        <option value={ns}>{ns}</option>
-      {/each}
-    </select>
-  </label>
+  <select
+    class="ns-select"
+    aria-label="Namespace"
+    value={app.namespace}
+    disabled={!app.current?.namespaced}
+    onchange={(e) => app.selectNamespace(e.currentTarget.value)}
+  >
+    <option value="">All namespaces</option>
+    {#if app.namespace && !app.namespaces.includes(app.namespace)}
+      <option value={app.namespace}>{app.namespace}</option>
+    {/if}
+    {#each app.namespaces as ns (ns)}
+      <option value={ns}>{ns}</option>
+    {/each}
+  </select>
 
   {#if app.context}
     <span class="cluster-pill">
@@ -119,18 +108,11 @@
     -webkit-user-select: none;
     -webkit-user-drag: none;
   }
-  .field {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    font-size: 12px;
-    color: var(--muted);
-    margin-right: var(--space-2);
-  }
-  .field select {
+  .ns-select {
     min-width: 184px;
     max-width: 280px;
     height: var(--control-h);
+    margin-right: var(--space-2);
   }
   .cluster-pill {
     display: inline-flex;

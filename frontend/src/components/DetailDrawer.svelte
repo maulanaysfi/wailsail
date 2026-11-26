@@ -1901,11 +1901,8 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--accent);
+    color: var(--text-strong);
     cursor: pointer;
-  }
-  .pod-link:hover {
-    text-decoration: underline;
   }
   .pod-link:focus-visible {
     outline: 1px solid var(--accent);

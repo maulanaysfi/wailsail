@@ -11,10 +11,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Log Timezone Setting (`settings`, `SettingsModal`, `LogViewer`)**: Added a persistent `Timezone` selector (`local` default, `UTC`, and IANA zones) converting Kubernetes log timestamps to `YYYY-MM-DD HH:mm:ss`.
 
 ### Changed
+- **Sidebar Context & Minimal Top Bar (`Sidebar`, `TopBar`)**: Moved the `Context` selector with a compact `Context` heading to the top of `Sidebar`, and removed the redundant `Namespace` label in `TopBar` leaving the dropdown alone.
+- **Plain Controlled Pod Names & Port-Forward Icon (`DetailDrawer`, `ResourceTable`)**: Styled controlled Pod name buttons cleanly (`var(--text-strong)`, monospace, no blue color or hover underline) matching the main table, and updated the context menu `Port forward` icon to a box-with-arrow `forward` icon.
 - **Double-Click `DetailDrawer` Toggle & Single-Click Focus (`ResourceTable`)**: Single-clicking a row highlights it as focused/active while double-clicking toggles `DetailDrawer`.
 - **Disable Pinch/Browser Zoom (`index.html`, `style.css`, `App.svelte`)**: Blocked trackpad pinch-to-zoom (`wheel` with `ctrlKey`/`metaKey`, `gesturestart`/`gesturechange`, `touch-action: pan-x pan-y`) and keyboard zoom shortcuts so viewport zoom stays controlled cleanly via `Settings -> Screen scale`.
 - **Undraggable App Logo (`TopBar`)**: Marked the top bar `/icon.png` logo non-draggable (`draggable="false"`, `-webkit-user-drag: none`, `user-select: none`).
 - **Port Forward Remote Port Input (`PortForwardModal`)**: Showed only the discovered ports dropdown when container/service ports exist, falling back to the numeric input only when no ports are declared (`ports.length === 0`).
+
+### Fixed
+- **Deletion Confirmation Grammar (`store.svelte.ts`)**: Fixed `"deleteed"` typo in delete confirmation dialogs and toast messages (`"deleted"` / `"uninstalled"`).
 
 ## [0.2.1-beta] - 2026-11-26
 

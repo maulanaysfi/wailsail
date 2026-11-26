@@ -616,12 +616,13 @@ class AppState {
     const isHelm = sel.type.group === "helm.sh" && sel.type.resource === "releases";
     const where = sel.namespace ? ` in namespace ${sel.namespace}` : "";
     const verb = isHelm ? "Uninstall" : "Delete";
-    if (!(await this.confirm(`${verb} ${sel.type.kind}?`, `${sel.name}${where} will be ${verb.toLowerCase()}ed.`, true))) {
+    const pastVerb = isHelm ? "uninstalled" : "deleted";
+    if (!(await this.confirm(`${verb} ${sel.type.kind}?`, `${sel.name}${where} will be ${pastVerb}.`, true))) {
       return false;
     }
     try {
       await Kube.Delete(this.context, refOf(sel.type), sel.namespace, sel.name);
-      this.toast(`${sel.type.kind} ${sel.name} ${verb.toLowerCase()}ed`, "ok");
+      this.toast(`${sel.type.kind} ${sel.name} ${pastVerb}`, "ok");
       if (
         this.selection &&
         this.selection.name === sel.name &&
