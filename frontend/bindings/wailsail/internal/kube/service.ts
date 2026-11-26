@@ -154,8 +154,10 @@ export function UninstallHelmRelease(contextName: string, $namespace: string, na
 }
 
 /**
- * Update server-side-applies edits to an existing selected object, rejecting
- * changes to immutable resource identity fields (kind, API group, name, namespace).
+ * Update replaces an existing selected object via HTTP PUT (matching `kubectl edit`
+ * semantics so removing attributes owned by other field managers, such as
+ * finalizers or node-role labels, takes effect), rejecting changes to immutable
+ * resource identity fields (kind, API group, name, namespace).
  */
 export function Update(contextName: string, ref: $models.ResourceRef, $namespace: string, name: string, manifest: string): $CancellablePromise<$models.ApplyResult> {
     return $Call.ByID(3635064223, contextName, ref, $namespace, name, manifest);
