@@ -4,33 +4,26 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"crypto/sha1"
-	"crypto/sha256"
-	"encoding/base32"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"hash/adler32"
 	"io"
-	"math"
-	"net/url"
 	"path"
-	"path/filepath"
-	"reflect"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"text/template"
 	"time"
 
+	sprig "github.com/Masterminds/sprig/v3"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/dynamic"
 	"sigs.k8s.io/yaml"
 )
 
@@ -1009,6 +1002,41 @@ func (f helmFiles) AsSecrets() string {
 	return strings.TrimSpace(string(b))
 }
 
+// helmAPIVersions backs Helm's .Capabilities.APIVersions.Has helper.
+type helmAPIVersions map[string]struct{}
+
+func (a helmAPIVersions) Has(apiVersion string) bool {
+	_, ok := a[apiVersion]
+	return ok
+}
+
+func discoverHelmAPIVersions(c *Clients) helmAPIVersions {
+	out := helmAPIVersions{"v1": {}}
+	if c == nil || c.Discovery == nil {
+		return out
+	}
+	groups, lists, _ := c.Discovery.ServerGroupsAndResources()
+	for _, g := range groups {
+		for _, v := range g.Versions {
+			if v.GroupVersion != "" {
+				out[v.GroupVersion] = struct{}{}
+			}
+		}
+	}
+	for _, l := range lists {
+		if l.GroupVersion == "" {
+			continue
+		}
+		out[l.GroupVersion] = struct{}{}
+		for _, r := range l.APIResources {
+			if r.Kind != "" {
+				out[l.GroupVersion+"/"+r.Kind] = struct{}{}
+			}
+		}
+	}
+	return out
+}
+
 // renderHelmChart executes the chart's embedded Go templates against merged values.
 func renderHelmChart(ch *helmChart, releaseName, namespace string, revision int, userConfig map[string]any, kubeVer string, c *Clients) (manifest string, notes string, err error) {
 	if ch == nil {
@@ -1021,6 +1049,8 @@ func renderHelmChart(ch *helmChart, releaseName, namespace string, revision int,
 	var funcMap template.FuncMap
 	funcMap = helmTemplateFuncs(t, includedNames, &funcMap, c)
 	t.Funcs(funcMap)
+
+	apiVersions := discoverHelmAPIVersions(c)
 
 	type chartRenderJob struct {
 		chartPath string
@@ -1134,6 +1164,7 @@ func renderHelmChart(ch *helmChart, releaseName, namespace string, revision int,
 				"HelmVersion": map[string]any{
 					"Version": "v3.17.0",
 				},
+				"APIVersions": apiVersions,
 			},
 			"Template": map[string]any{
 				"Name":     fullName,
@@ -1166,84 +1197,11 @@ func renderHelmChart(ch *helmChart, releaseName, namespace string, revision int,
 }
 
 func helmTemplateFuncs(t *template.Template, includedNames map[string]int, funcMapPtr *template.FuncMap, c *Clients) template.FuncMap {
-	toStr := func(v any) string {
-		switch s := v.(type) {
-		case nil:
-			return ""
-		case string:
-			return s
-		case []byte:
-			return string(s)
-		case fmt.Stringer:
-			return s.String()
-		default:
-			return fmt.Sprintf("%v", v)
-		}
-	}
-	toInt64 := func(v any) int64 {
-		switch n := v.(type) {
-		case int:
-			return int64(n)
-		case int64:
-			return n
-		case int32:
-			return int64(n)
-		case float64:
-			return int64(n)
-		case float32:
-			return int64(n)
-		case json.Number:
-			i, _ := n.Int64()
-			return i
-		case string:
-			i, _ := strconv.ParseInt(strings.TrimSpace(n), 10, 64)
-			return i
-		default:
-			return 0
-		}
-	}
-	toFloat64 := func(v any) float64 {
-		switch n := v.(type) {
-		case float64:
-			return n
-		case float32:
-			return float64(n)
-		case int:
-			return float64(n)
-		case int64:
-			return float64(n)
-		case string:
-			f, _ := strconv.ParseFloat(strings.TrimSpace(n), 64)
-			return f
-		default:
-			return 0
-		}
-	}
-	isEmpty := func(v any) bool {
-		if v == nil {
-			return true
-		}
-		rv := reflect.ValueOf(v)
-		switch rv.Kind() {
-		case reflect.Bool:
-			return !rv.Bool()
-		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			return rv.Int() == 0
-		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			return rv.Uint() == 0
-		case reflect.Float32, reflect.Float64:
-			return rv.Float() == 0
-		case reflect.String, reflect.Array, reflect.Slice, reflect.Map:
-			return rv.Len() == 0
-		case reflect.Ptr, reflect.Interface:
-			return rv.IsNil()
-		}
-		return false
-	}
-	indentStr := func(spaces int, v string) string {
-		pad := strings.Repeat(" ", spaces)
-		return pad + strings.ReplaceAll(v, "\n", "\n"+pad)
-	}
+	f := sprig.TxtFuncMap()
+	// Match upstream Helm sandbox restrictions.
+	delete(f, "env")
+	delete(f, "expandenv")
+
 	toYAML := func(v any) (string, error) {
 		b, err := yaml.Marshal(v)
 		if err != nil {
@@ -1259,15 +1217,15 @@ func helmTemplateFuncs(t *template.Template, includedNames map[string]int, funcM
 		return string(b), nil
 	}
 
-	return template.FuncMap{
+	helmExtras := template.FuncMap{
 		"include": func(name string, data any) (string, error) {
-			if includedNames[name] > 100 {
+			if includedNames[name] > 1000 {
 				return "", fmt.Errorf("rendering template has a recursive reference name: %s", name)
 			}
 			includedNames[name]++
+			defer func() { includedNames[name]-- }()
 			var buf bytes.Buffer
 			err := t.ExecuteTemplate(&buf, name, data)
-			includedNames[name]--
 			return buf.String(), err
 		},
 		"tpl": func(tplStr string, data any) (string, error) {
@@ -1297,9 +1255,6 @@ func helmTemplateFuncs(t *template.Template, includedNames map[string]int, funcM
 			}
 			return val, nil
 		},
-		"fail": func(msg string) (string, error) {
-			return "", errors.New(msg)
-		},
 		"toYaml": func(v any) string {
 			s, _ := toYAML(v)
 			return s
@@ -1312,603 +1267,64 @@ func helmTemplateFuncs(t *template.Template, includedNames map[string]int, funcM
 			}
 			return m
 		},
+		"fromYamlArray": func(str string) []any {
+			var a []any
+			if err := yaml.Unmarshal([]byte(str), &a); err != nil {
+				return []any{err.Error()}
+			}
+			return a
+		},
 		"toJson": func(v any) string {
 			s, _ := toJSON(v)
 			return s
 		},
 		"mustToJson": toJSON,
-		"toPrettyJson": func(v any) string {
-			b, _ := json.MarshalIndent(v, "", "  ")
-			return string(b)
-		},
-		"fromJson": func(str string) any {
-			var out any
-			_ = json.Unmarshal([]byte(str), &out)
-			return out
-		},
-		"indent":  indentStr,
-		"nindent": func(spaces int, v string) string { return "\n" + indentStr(spaces, v) },
-		"default": func(def any, given ...any) any {
-			if len(given) == 0 || isEmpty(given[0]) {
-				return def
-			}
-			return given[0]
-		},
-		"empty": isEmpty,
-		"coalesce": func(vals ...any) any {
-			for _, v := range vals {
-				if !isEmpty(v) {
-					return v
-				}
-			}
-			return nil
-		},
-		"ternary": func(vt, vf any, cond bool) any {
-			if cond {
-				return vt
-			}
-			return vf
-		},
-		"quote": func(vals ...any) string {
-			out := make([]string, 0, len(vals))
-			for _, v := range vals {
-				if v == nil {
-					continue
-				}
-				out = append(out, fmt.Sprintf("%q", toStr(v)))
-			}
-			return strings.Join(out, " ")
-		},
-		"squote": func(vals ...any) string {
-			out := make([]string, 0, len(vals))
-			for _, v := range vals {
-				if v == nil {
-					continue
-				}
-				out = append(out, "'"+strings.ReplaceAll(toStr(v), "'", "''")+"'")
-			}
-			return strings.Join(out, " ")
-		},
-		"cat": func(vals ...any) string {
-			out := make([]string, 0, len(vals))
-			for _, v := range vals {
-				if v == nil {
-					continue
-				}
-				out = append(out, toStr(v))
-			}
-			return strings.Join(out, " ")
-		},
-		"trim":       strings.TrimSpace,
-		"trimAll":    func(cut, s string) string { return strings.Trim(s, cut) },
-		"trimSuffix": func(suf, s string) string { return strings.TrimSuffix(s, suf) },
-		"trimPrefix": func(pre, s string) string { return strings.TrimPrefix(s, pre) },
-		"trunc": func(n int, s string) string {
-			if n < 0 && len(s)+n > 0 {
-				return s[len(s)+n:]
-			}
-			if n >= 0 && len(s) > n {
-				return s[:n]
-			}
-			return s
-		},
-		"abbrev": func(max int, s string) string {
-			if max <= 3 || len(s) <= max {
-				return s
-			}
-			return s[:max-3] + "..."
-		},
-		"lower":      strings.ToLower,
-		"upper":      strings.ToUpper,
-		"title":      strings.Title,
-		"replace":    func(old, new, s string) string { return strings.ReplaceAll(s, old, new) },
-		"contains":   func(sub, s string) bool { return strings.Contains(s, sub) },
-		"hasPrefix":  func(pre, s string) bool { return strings.HasPrefix(s, pre) },
-		"hasSuffix":  func(suf, s string) bool { return strings.HasSuffix(s, suf) },
-		"repeat":     func(n int, s string) string { return strings.Repeat(s, n) },
-		"nospace":    func(s string) string { return strings.Join(strings.Fields(s), "") },
-		"splitList":  func(sep, s string) []string { return strings.Split(s, sep) },
-		"split": func(sep, s string) map[string]string {
-			parts := strings.Split(s, sep)
-			res := make(map[string]string, len(parts))
-			for i, p := range parts {
-				res[fmt.Sprintf("_%d", i)] = p
-			}
-			return res
-		},
-		"join": func(sep string, v any) string {
-			rv := reflect.ValueOf(v)
-			if rv.Kind() != reflect.Slice && rv.Kind() != reflect.Array {
-				return toStr(v)
-			}
-			out := make([]string, rv.Len())
-			for i := 0; i < rv.Len(); i++ {
-				out[i] = toStr(rv.Index(i).Interface())
-			}
-			return strings.Join(out, sep)
-		},
-		"sortAlpha": func(v any) []string {
-			rv := reflect.ValueOf(v)
-			if rv.Kind() != reflect.Slice && rv.Kind() != reflect.Array {
-				return nil
-			}
-			out := make([]string, rv.Len())
-			for i := 0; i < rv.Len(); i++ {
-				out[i] = toStr(rv.Index(i).Interface())
-			}
-			sort.Strings(out)
-			return out
-		},
-		"substr": func(start, end int, s string) string {
-			if start < 0 {
-				start = 0
-			}
-			if end < 0 || end > len(s) {
-				end = len(s)
-			}
-			if start >= end || start >= len(s) {
-				return ""
-			}
-			return s[start:end]
-		},
-		"b64enc": func(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) },
-		"b64dec": func(s string) string {
-			b, _ := base64.StdEncoding.DecodeString(s)
-			return string(b)
-		},
-		"b32enc": func(s string) string { return base32.StdEncoding.EncodeToString([]byte(s)) },
-		"b32dec": func(s string) string {
-			b, _ := base32.StdEncoding.DecodeString(s)
-			return string(b)
-		},
-		"sha256sum": func(s string) string {
-			sum := sha256.Sum256([]byte(s))
-			return hex.EncodeToString(sum[:])
-		},
-		"sha1sum": func(s string) string {
-			sum := sha1.Sum([]byte(s))
-			return hex.EncodeToString(sum[:])
-		},
-		"adler32sum": func(s string) string {
-			return strconv.FormatUint(uint64(adler32.Checksum([]byte(s))), 10)
-		},
-		"add": func(vals ...any) int64 {
-			var sum int64
-			for _, v := range vals {
-				sum += toInt64(v)
-			}
-			return sum
-		},
-		"add1": func(v any) int64 { return toInt64(v) + 1 },
-		"sub":  func(a, b any) int64 { return toInt64(a) - toInt64(b) },
-		"mul": func(a any, rest ...any) int64 {
-			res := toInt64(a)
-			for _, v := range rest {
-				res *= toInt64(v)
-			}
-			return res
-		},
-		"div": func(a, b any) int64 {
-			d := toInt64(b)
-			if d == 0 {
-				return 0
-			}
-			return toInt64(a) / d
-		},
-		"mod": func(a, b any) int64 {
-			d := toInt64(b)
-			if d == 0 {
-				return 0
-			}
-			return toInt64(a) % d
-		},
-		"max": func(a any, rest ...any) int64 {
-			m := toInt64(a)
-			for _, v := range rest {
-				if n := toInt64(v); n > m {
-					m = n
-				}
+		"fromJson": func(str string) map[string]any {
+			m := map[string]any{}
+			if err := json.Unmarshal([]byte(str), &m); err != nil {
+				m["Error"] = err.Error()
 			}
 			return m
 		},
-		"min": func(a any, rest ...any) int64 {
-			m := toInt64(a)
-			for _, v := range rest {
-				if n := toInt64(v); n < m {
-					m = n
-				}
+		"fromJsonArray": func(str string) []any {
+			var a []any
+			if err := json.Unmarshal([]byte(str), &a); err != nil {
+				return []any{err.Error()}
 			}
-			return m
+			return a
 		},
-		"floor":    func(v any) float64 { return math.Floor(toFloat64(v)) },
-		"ceil":     func(v any) float64 { return math.Ceil(toFloat64(v)) },
-		"int":      func(v any) int { return int(toInt64(v)) },
-		"int64":    toInt64,
-		"float64":  toFloat64,
-		"atoi":     func(s string) int { i, _ := strconv.Atoi(strings.TrimSpace(s)); return i },
-		"toString": toStr,
-		"toStrings": func(v any) []string {
-			rv := reflect.ValueOf(v)
-			if rv.Kind() != reflect.Slice && rv.Kind() != reflect.Array {
-				return []string{toStr(v)}
-			}
-			out := make([]string, rv.Len())
-			for i := 0; i < rv.Len(); i++ {
-				out[i] = toStr(rv.Index(i).Interface())
-			}
-			return out
-		},
-		"list": func(v ...any) []any { return v },
-		"append": func(l any, v any) []any {
-			s := toAnySlice(l)
-			return append(s, v)
-		},
-		"mustAppend": func(l any, v any) ([]any, error) {
-			return append(toAnySlice(l), v), nil
-		},
-		"prepend": func(l any, v any) []any {
-			return append([]any{v}, toAnySlice(l)...)
-		},
-		"mustPrepend": func(l any, v any) ([]any, error) {
-			return append([]any{v}, toAnySlice(l)...), nil
-		},
-		"first": func(l any) any {
-			s := toAnySlice(l)
-			if len(s) == 0 {
-				return nil
-			}
-			return s[0]
-		},
-		"last": func(l any) any {
-			s := toAnySlice(l)
-			if len(s) == 0 {
-				return nil
-			}
-			return s[len(s)-1]
-		},
-		"rest": func(l any) []any {
-			s := toAnySlice(l)
-			if len(s) <= 1 {
-				return nil
-			}
-			return s[1:]
-		},
-		"initial": func(l any) []any {
-			s := toAnySlice(l)
-			if len(s) <= 1 {
-				return nil
-			}
-			return s[:len(s)-1]
-		},
-		"uniq": func(l any) []any {
-			s := toAnySlice(l)
-			var out []any
-			for _, item := range s {
-				found := false
-				for _, existing := range out {
-					if reflect.DeepEqual(item, existing) {
-						found = true
-						break
-					}
-				}
-				if !found {
-					out = append(out, item)
-				}
-			}
-			return out
-		},
-		"has": func(needle any, l any) bool {
-			for _, item := range toAnySlice(l) {
-				if reflect.DeepEqual(needle, item) {
-					return true
-				}
-			}
-			return false
-		},
-		"compact": func(l any) []any {
-			var out []any
-			for _, item := range toAnySlice(l) {
-				if !isEmpty(item) {
-					out = append(out, item)
-				}
-			}
-			return out
-		},
-		"concat": func(lists ...any) []any {
-			var out []any
-			for _, l := range lists {
-				out = append(out, toAnySlice(l)...)
-			}
-			return out
-		},
-		"dict": func(v ...any) map[string]any {
-			d := map[string]any{}
-			for i := 0; i < len(v); i += 2 {
-				k := toStr(v[i])
-				if i+1 < len(v) {
-					d[k] = v[i+1]
-				} else {
-					d[k] = ""
-				}
-			}
-			return d
-		},
-		"get": func(d map[string]any, k string) any {
-			if d == nil {
-				return ""
-			}
-			if v, ok := d[k]; ok {
-				return v
-			}
-			return ""
-		},
-		"set": func(d map[string]any, k string, v any) map[string]any {
-			if d == nil {
-				d = map[string]any{}
-			}
-			d[k] = v
-			return d
-		},
-		"unset": func(d map[string]any, k string) map[string]any {
-			delete(d, k)
-			return d
-		},
-		"hasKey": func(d map[string]any, k string) bool {
-			_, ok := d[k]
-			return ok
-		},
-		"keys": func(dicts ...map[string]any) []string {
-			var out []string
-			for _, d := range dicts {
-				for k := range d {
-					out = append(out, k)
-				}
-			}
-			return out
-		},
-		"values": func(d map[string]any) []any {
-			var out []any
-			for _, v := range d {
-				out = append(out, v)
-			}
-			return out
-		},
-		"pick": func(d map[string]any, keys ...string) map[string]any {
-			res := map[string]any{}
-			for _, k := range keys {
-				if v, ok := d[k]; ok {
-					res[k] = v
-				}
-			}
-			return res
-		},
-		"omit": func(d map[string]any, keys ...string) map[string]any {
-			drop := map[string]bool{}
-			for _, k := range keys {
-				drop[k] = true
-			}
-			res := map[string]any{}
-			for k, v := range d {
-				if !drop[k] {
-					res[k] = v
-				}
-			}
-			return res
-		},
-		"merge": func(dst map[string]any, srcs ...map[string]any) map[string]any {
-			for _, src := range srcs {
-				dst = mergeNoOverwrite(dst, src)
-			}
-			return dst
-		},
-		"mustMerge": func(dst map[string]any, srcs ...map[string]any) (map[string]any, error) {
-			for _, src := range srcs {
-				dst = mergeNoOverwrite(dst, src)
-			}
-			return dst, nil
-		},
-		"mergeOverwrite": func(dst map[string]any, srcs ...map[string]any) map[string]any {
-			for _, src := range srcs {
-				dst = coalesceValues(dst, src)
-			}
-			return dst
-		},
-		"mustMergeOverwrite": func(dst map[string]any, srcs ...map[string]any) (map[string]any, error) {
-			for _, src := range srcs {
-				dst = coalesceValues(dst, src)
-			}
-			return dst, nil
-		},
-		"deepCopy":     deepCopyValue,
-		"mustDeepCopy": func(v any) (any, error) { return deepCopyValue(v), nil },
-		"dig": func(args ...any) (any, error) {
-			if len(args) < 2 {
-				return nil, nil
-			}
-			def := args[len(args)-2]
-			cur := args[len(args)-1]
-			for _, k := range args[:len(args)-2] {
-				ks, ok := k.(string)
-				if !ok {
-					return def, nil
-				}
-				m, ok := toStringAnyMap(cur)
-				if !ok {
-					return def, nil
-				}
-				next, exists := m[ks]
-				if !exists {
-					return def, nil
-				}
-				cur = next
-			}
-			if cur == nil {
-				return def, nil
-			}
-			return cur, nil
-		},
-		"regexMatch": func(pattern, s string) bool {
-			matched, _ := regexp.MatchString(pattern, s)
-			return matched
-		},
-		"mustRegexMatch": regexp.MatchString,
-		"regexReplaceAll": func(pattern, s, repl string) string {
-			re, err := regexp.Compile(pattern)
-			if err != nil {
-				return s
-			}
-			return re.ReplaceAllString(s, repl)
-		},
-		"regexReplaceAllLiteral": func(pattern, s, repl string) string {
-			re, err := regexp.Compile(pattern)
-			if err != nil {
-				return s
-			}
-			return re.ReplaceAllLiteralString(s, repl)
-		},
-		"now": time.Now,
-		"date": func(fmtStr string, date any) string {
-			if t, ok := date.(time.Time); ok {
-				return t.Format(convertStrftime(fmtStr))
-			}
-			return time.Now().Format(convertStrftime(fmtStr))
-		},
-		"base":    path.Base,
-		"dir":     path.Dir,
-		"ext":     path.Ext,
-		"clean":   path.Clean,
-		"isAbs":   path.IsAbs,
-		"osBase":  filepath.Base,
-		"osDir":   filepath.Dir,
-		"osExt":   filepath.Ext,
-		"osClean": filepath.Clean,
-		"urlParse": func(raw string) map[string]any {
-			u, _ := url.Parse(raw)
-			if u == nil {
-				return map[string]any{}
-			}
-			return map[string]any{
-				"scheme":   u.Scheme,
-				"host":     u.Host,
-				"hostname": u.Hostname(),
-				"path":     u.Path,
-				"query":    u.RawQuery,
-				"fragment": u.Fragment,
-			}
-		},
-		"semverCompare": semverCompareSimple,
-		"typeOf":        func(v any) string { return fmt.Sprintf("%T", v) },
-		"kindOf": func(v any) string {
-			if v == nil {
-				return "invalid"
-			}
-			return reflect.ValueOf(v).Kind().String()
-		},
-		"kindIs": func(want string, v any) bool {
-			if v == nil {
-				return want == "invalid"
-			}
-			return reflect.ValueOf(v).Kind().String() == want
-		},
-		"deepEqual": reflect.DeepEqual,
 		"lookup": func(apiVersion, kind, namespace, name string) (map[string]any, error) {
-			return map[string]any{}, nil
+			if c == nil || c.Mapper == nil || c.Dynamic == nil || kind == "" {
+				return map[string]any{}, nil
+			}
+			gv, err := schema.ParseGroupVersion(apiVersion)
+			if err != nil {
+				return map[string]any{}, nil
+			}
+			mapping, err := c.Mapper.RESTMapping(schema.GroupKind{Group: gv.Group, Kind: kind}, gv.Version)
+			if err != nil {
+				return map[string]any{}, nil
+			}
+			var ri dynamic.ResourceInterface = c.Dynamic.Resource(mapping.Resource)
+			if mapping.Scope.Name() == "namespace" && namespace != "" {
+				ri = c.Dynamic.Resource(mapping.Resource).Namespace(namespace)
+			}
+			if name == "" {
+				list, err := ri.List(context.Background(), metav1.ListOptions{})
+				if err != nil {
+					return map[string]any{}, nil
+				}
+				return list.UnstructuredContent(), nil
+			}
+			obj, err := ri.Get(context.Background(), name, metav1.GetOptions{})
+			if err != nil {
+				return map[string]any{}, nil
+			}
+			return obj.UnstructuredContent(), nil
 		},
 	}
-}
-
-func toAnySlice(v any) []any {
-	if v == nil {
-		return nil
+	for k, v := range helmExtras {
+		f[k] = v
 	}
-	if s, ok := v.([]any); ok {
-		return s
-	}
-	rv := reflect.ValueOf(v)
-	if rv.Kind() != reflect.Slice && rv.Kind() != reflect.Array {
-		return []any{v}
-	}
-	out := make([]any, rv.Len())
-	for i := 0; i < rv.Len(); i++ {
-		out[i] = rv.Index(i).Interface()
-	}
-	return out
-}
-
-func mergeNoOverwrite(dst, src map[string]any) map[string]any {
-	if dst == nil {
-		dst = map[string]any{}
-	}
-	for k, sv := range src {
-		if dv, exists := dst[k]; exists {
-			dm, dok := toStringAnyMap(dv)
-			sm, sok := toStringAnyMap(sv)
-			if dok && sok {
-				dst[k] = mergeNoOverwrite(dm, sm)
-			}
-			continue
-		}
-		dst[k] = deepCopyValue(sv)
-	}
-	return dst
-}
-
-func convertStrftime(f string) string {
-	r := strings.NewReplacer(
-		"2006", "2006", "%Y", "2006", "%m", "01", "%d", "02",
-		"%H", "15", "%M", "04", "%S", "05",
-	)
-	return r.Replace(f)
-}
-
-func semverCompareSimple(constraint, version string) bool {
-	c := strings.TrimSpace(constraint)
-	op := "="
-	for _, prefix := range []string{">=", "<=", "!=", ">", "<", "="} {
-		if strings.HasPrefix(c, prefix) {
-			op = prefix
-			c = strings.TrimSpace(strings.TrimPrefix(c, prefix))
-			break
-		}
-	}
-	cmp := compareSemverTuple(parseSemverTuple(version), parseSemverTuple(c))
-	switch op {
-	case ">=":
-		return cmp >= 0
-	case "<=":
-		return cmp <= 0
-	case ">":
-		return cmp > 0
-	case "<":
-		return cmp < 0
-	case "!=":
-		return cmp != 0
-	default:
-		return cmp == 0
-	}
-}
-
-func parseSemverTuple(v string) [3]int {
-	v = strings.TrimPrefix(strings.TrimSpace(v), "v")
-	if idx := strings.IndexAny(v, "-+"); idx != -1 {
-		v = v[:idx]
-	}
-	parts := strings.Split(v, ".")
-	var out [3]int
-	for i := 0; i < len(parts) && i < 3; i++ {
-		out[i], _ = strconv.Atoi(parts[i])
-	}
-	return out
-}
-
-func compareSemverTuple(a, b [3]int) int {
-	for i := 0; i < 3; i++ {
-		if a[i] != b[i] {
-			if a[i] < b[i] {
-				return -1
-			}
-			return 1
-		}
-	}
-	return 0
+	return f
 }

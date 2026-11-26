@@ -23,6 +23,15 @@ export function Start(contextName: string, $namespace: string, pod: string, opts
 }
 
 /**
+ * StartWorkload aggregates logs across all main containers of Pods owned by a
+ * workload (Deployment, ReplicaSet, StatefulSet, DaemonSet, Job, CronJob),
+ * capping active Pod streams at MaxAggregatedPods and following new rollout Pods.
+ */
+export function StartWorkload(contextName: string, $namespace: string, kind: string, uid: string, name: string, opts: $models.Options, streamID: string): $CancellablePromise<string> {
+    return $Call.ByID(4188745981, contextName, $namespace, kind, uid, name, opts, streamID);
+}
+
+/**
  * Stop cancels a log stream.
  */
 export function Stop(streamID: string): $CancellablePromise<void> {

@@ -564,8 +564,10 @@ func (s *Service) Apply(contextName string, manifest string, defaultNamespace st
 	return results, nil
 }
 
-// Update server-side-applies edits to an existing selected object, rejecting
-// changes to immutable resource identity fields (kind, API group, name, namespace).
+// Update replaces an existing selected object via HTTP PUT (matching `kubectl edit`
+// semantics so removing attributes owned by other field managers, such as
+// finalizers or node-role labels, takes effect), rejecting changes to immutable
+// resource identity fields (kind, API group, name, namespace).
 func (s *Service) Update(contextName string, ref ResourceRef, namespace, name, manifest string) (ApplyResult, error) {
 	c, err := s.mgr.For(contextName)
 	if err != nil {
@@ -584,7 +586,7 @@ func (s *Service) Update(contextName string, ref ResourceRef, namespace, name, m
 	if err := validateUpdateTarget(objs[0], ref, namespace, name); err != nil {
 		return ApplyResult{}, err
 	}
-	return s.applyObject(c, objs[0], namespace)
+	return s.updateObject(c, objs[0], namespace)
 }
 
 func validateUpdateTarget(obj *unstructured.Unstructured, ref ResourceRef, expectedNamespace, expectedName string) error {
@@ -609,13 +611,13 @@ func validateUpdateTarget(obj *unstructured.Unstructured, ref ResourceRef, expec
 	return nil
 }
 
-func (s *Service) applyObject(c *Clients, obj *unstructured.Unstructured, defaultNamespace string) (ApplyResult, error) {
+func resolveObjectRef(c *Clients, obj *unstructured.Unstructured, defaultNamespace string) (ResourceRef, error) {
 	gvk := obj.GroupVersionKind()
 	mapping, err := c.Mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
 	if err != nil {
 		c.Mapper.Reset()
 		if mapping, err = c.Mapper.RESTMapping(gvk.GroupKind(), gvk.Version); err != nil {
-			return ApplyResult{}, fmt.Errorf("%s: %w", gvk.Kind, err)
+			return ResourceRef{}, fmt.Errorf("%s: %w", gvk.Kind, err)
 		}
 	}
 	namespaced := mapping.Scope.Name() == "namespace"
@@ -629,20 +631,50 @@ func (s *Service) applyObject(c *Clients, obj *unstructured.Unstructured, defaul
 	if !namespaced {
 		obj.SetNamespace("")
 	}
+	return ResourceRef{
+		Group:      mapping.Resource.Group,
+		Version:    mapping.Resource.Version,
+		Resource:   mapping.Resource.Resource,
+		Kind:       gvk.Kind,
+		Namespaced: namespaced,
+	}, nil
+}
+
+func (s *Service) updateObject(c *Clients, obj *unstructured.Unstructured, defaultNamespace string) (ApplyResult, error) {
+	ref, err := resolveObjectRef(c, obj, defaultNamespace)
+	if err != nil {
+		return ApplyResult{}, err
+	}
+	PrepareForUpdate(obj)
+	if _, err := s.resourceClient(c, ref, obj.GetNamespace()).Update(s.baseCtx, obj, metav1.UpdateOptions{}); err != nil {
+		return ApplyResult{}, fmt.Errorf("%s %s: %w", ref.Kind, obj.GetName(), err)
+	}
+	return ApplyResult{Kind: ref.Kind, Namespace: obj.GetNamespace(), Name: obj.GetName()}, nil
+}
+
+func (s *Service) applyObject(c *Clients, obj *unstructured.Unstructured, defaultNamespace string) (ApplyResult, error) {
+	ref, err := resolveObjectRef(c, obj, defaultNamespace)
+	if err != nil {
+		return ApplyResult{}, err
+	}
 	PrepareForApply(obj)
 	data, err := json.Marshal(obj.Object)
 	if err != nil {
 		return ApplyResult{}, err
 	}
-	ref := ResourceRef{Group: mapping.Resource.Group, Version: mapping.Resource.Version,
-		Resource: mapping.Resource.Resource, Kind: gvk.Kind, Namespaced: namespaced}
 	force := true
 	_, err = s.resourceClient(c, ref, obj.GetNamespace()).Patch(s.baseCtx, obj.GetName(),
 		types.ApplyPatchType, data, metav1.PatchOptions{FieldManager: FieldManager, Force: &force})
 	if err != nil {
-		return ApplyResult{}, fmt.Errorf("%s %s: %w", gvk.Kind, obj.GetName(), err)
+		return ApplyResult{}, fmt.Errorf("%s %s: %w", ref.Kind, obj.GetName(), err)
 	}
-	return ApplyResult{Kind: gvk.Kind, Namespace: obj.GetNamespace(), Name: obj.GetName()}, nil
+	return ApplyResult{Kind: ref.Kind, Namespace: obj.GetNamespace(), Name: obj.GetName()}, nil
+}
+
+// PrepareForUpdate removes managedFields before PUT so edits behave like `kubectl edit`
+// while preserving metadata.resourceVersion for optimistic concurrency checks.
+func PrepareForUpdate(obj *unstructured.Unstructured) {
+	unstructured.RemoveNestedField(obj.Object, "metadata", "managedFields")
 }
 
 // PrepareForApply removes fields that server-side apply rejects or that

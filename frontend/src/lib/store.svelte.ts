@@ -8,6 +8,7 @@ import {
   type ResourceType,
   type SettingsData,
 } from "./api";
+import { toastTimeoutMs, type ToastTone } from "./format";
 import { kindKey, resourceKey } from "./resources";
 
 export interface Selection {
@@ -19,13 +20,28 @@ export interface Selection {
 export type DockStatus = "connecting" | "connected" | "disconnected";
 
 export type DockTab =
-  | { id: string; kind: "logs"; title: string; context: string; namespace: string; pod: string; container?: string }
+  | {
+      id: string;
+      kind: "logs";
+      title: string;
+      context: string;
+      namespace: string;
+      pod: string;
+      container?: string;
+      workload?: { kind: string; uid: string; name: string };
+    }
   | { id: string; kind: "shell"; title: string; context: string; namespace: string; pod: string; container?: string };
+
+type DistributiveOmit<T, K extends keyof any> = T extends any ? Omit<T, K> : never;
+export type DockTabInput = DistributiveOmit<DockTab, "id">;
 
 export interface Toast {
   id: number;
-  tone: "info" | "error" | "ok";
+  key?: string;
+  tone: ToastTone;
   text: string;
+  pinned?: boolean;
+  retryable?: boolean;
 }
 
 interface ConfirmRequest {
@@ -49,7 +65,7 @@ const defaultSettings: SettingsData = {
 };
 
 export const scaleOptions = [50, 75, 100, 125, 150] as const;
-export const APP_VERSION = "v0.2.0 (beta)";
+export const APP_VERSION = "v0.2.1 (beta)";
 
 class AppState {
   contexts = $state<ContextInfo[]>([]);
@@ -76,12 +92,16 @@ class AppState {
   defaultKubeconfigPath = $state("");
   forwardTarget = $state<Selection | null>(null);
   cancelYamlEdit: (() => void) | null = null;
+  reconnectNonce = $state(0);
   now = $state(Date.now());
 
   #toastSeq = 0;
+  #toastTimers = new Map<number, { handle: ReturnType<typeof setTimeout> | null; remainingMs: number; startedAt: number }>();
+  #connToastDismissedText = "";
   #lastReplyAt = 0;
   #unansweredSince = 0;
   #probing = false;
+  #hydrating = false;
   #ticks = 0;
   #saveChain = Promise.resolve();
   #savePending = false;
@@ -109,7 +129,7 @@ class AppState {
       this.contexts = (await Kube.Contexts()) ?? [];
     } catch (e) {
       this.contexts = [];
-      this.connectionError = `Could not load kubeconfig: ${errorMessage(e)}`;
+      this.#setConnectionError(`Could not load kubeconfig: ${errorMessage(e)}`);
       return;
     }
     const names = this.contexts.map((c) => c.name);
@@ -136,7 +156,8 @@ class AppState {
     this.resources = [];
     this.namespaces = [];
     this.serverVersion = "";
-    this.connectionError = "";
+    this.#connToastDismissedText = "";
+    this.#setConnectionError("");
     this.saveSettings({ lastContext: name });
 
     const saved = this.settings.lastNamespace?.[name];
@@ -151,6 +172,28 @@ class AppState {
     this.#lastReplyAt = 0;
     this.#refreshClusterStatus();
     try {
+      await this.#hydrateContext(name, wantResKey, wantSelection);
+    } catch (e) {
+      if (this.context === name) {
+        this.#setConnectionError(`Could not connect to ${name || "kubeconfig"}: ${errorMessage(e)}`);
+      }
+    } finally {
+      if (this.context === name) {
+        this.resourcesLoading = false;
+        this.#refreshClusterStatus();
+      }
+    }
+  }
+
+  async #hydrateContext(name: string, wantResKey: string, wantSelection: Selection | null) {
+    if (this.#hydrating) return;
+    this.#hydrating = true;
+    try {
+      if (!this.namespace && !(this.settings.lastNamespace && name in this.settings.lastNamespace)) {
+        const defNs = (await Kube.DefaultNamespace(name).catch(() => "")) ?? "";
+        if (this.context !== name) return;
+        if (defNs) this.namespace = defNs;
+      }
       const [version, resources, namespaces] = await Promise.all([
         Kube.ServerVersion(name),
         Kube.APIResources(name),
@@ -159,6 +202,7 @@ class AppState {
       if (this.context !== name) return; // switched meanwhile
       this.#lastReplyAt = Date.now();
       this.#unansweredSince = 0;
+      this.#setConnectionError("");
       this.serverVersion = version;
       this.resources = resources ?? [];
       this.namespaces = namespaces ?? [];
@@ -168,19 +212,16 @@ class AppState {
       if (wantSelection && this.current && resourceKey(wantSelection.type) === resourceKey(this.current)) {
         this.selection = { ...wantSelection, type: this.current };
       }
-    } catch (e) {
-      if (this.context === name) this.connectionError = errorMessage(e);
     } finally {
-      if (this.context === name) {
-        this.resourcesLoading = false;
-        this.#refreshClusterStatus();
-      }
+      this.#hydrating = false;
     }
   }
 
   #probeCluster() {
     const ctx = this.context;
-    if (!ctx || this.#probing || this.resourcesLoading) return;
+    if (!ctx || this.#probing || this.resourcesLoading || this.#hydrating) return;
+    const wasOffline = this.clusterStatus === "disconnected" || !!this.connectionError;
+    const needsHydration = this.resources.length === 0 || !this.current;
     this.#probing = true;
     if (this.#unansweredSince === 0) this.#unansweredSince = Date.now();
     Kube.ServerVersion(ctx)
@@ -189,7 +230,25 @@ class AppState {
         this.#lastReplyAt = Date.now();
         this.#unansweredSince = 0;
         if (v) this.serverVersion = v;
-        this.connectionError = "";
+        this.#setConnectionError("");
+        if (wasOffline) this.toast(`Connected to ${ctx}`, "ok");
+        if (needsHydration) {
+          const wantResKey = this.current ? resourceKey(this.current) : "";
+          void this.#hydrateContext(ctx, wantResKey, this.selection)
+            .catch(() => {})
+            .finally(() => this.#refreshClusterStatus());
+          return;
+        }
+        if (wasOffline) {
+          this.reconnectNonce++;
+          void Promise.all([Kube.APIResources(ctx), Kube.Namespaces(ctx)])
+            .then(([resources, namespaces]) => {
+              if (this.context !== ctx) return;
+              if (resources?.length) this.resources = resources;
+              if (namespaces) this.namespaces = namespaces;
+            })
+            .catch(() => {});
+        }
       })
       .catch(() => {
         // Keep #unansweredSince running so 5s -> yellow and 30s -> red transitions occur.
@@ -209,6 +268,7 @@ class AppState {
       const elapsed = Date.now() - this.#unansweredSince;
       if (elapsed >= 30_000) {
         this.clusterStatus = "disconnected";
+        this.#syncConnToast(`Lost connection to ${this.context} (retrying…)`);
         return;
       }
       if (elapsed >= 5_000) {
@@ -217,6 +277,22 @@ class AppState {
       }
     }
     this.clusterStatus = this.#lastReplyAt > 0 ? "connected" : "slow";
+  }
+
+  #setConnectionError(msg: string) {
+    this.connectionError = msg;
+    this.#syncConnToast(msg);
+  }
+
+  #syncConnToast(msg: string) {
+    if (!msg) {
+      this.#connToastDismissedText = "";
+      const existing = this.toasts.find((t) => t.key === "cluster-conn");
+      if (existing) this.dismissToast(existing.id);
+      return;
+    }
+    if (this.#connToastDismissedText === msg) return;
+    this.toast(msg, "error", { key: "cluster-conn", pinned: true, retryable: !!this.context });
   }
 
   selectNamespace(ns: string) {
@@ -330,12 +406,13 @@ class AppState {
     this.resources = [];
     this.namespaces = [];
     this.serverVersion = "";
-    this.connectionError = "";
+    this.#connToastDismissedText = "";
+    this.#setConnectionError("");
     try {
       this.contexts = (await Kube.Contexts()) ?? [];
     } catch (e) {
       this.contexts = [];
-      this.connectionError = `Could not load kubeconfig: ${errorMessage(e)}`;
+      this.#setConnectionError(`Could not load kubeconfig: ${errorMessage(e)}`);
       return;
     }
     const names = this.contexts.map((c) => c.name);
@@ -360,15 +437,18 @@ class AppState {
     this.saveSettings({ theme: next });
   }
 
-  openDock(tab: Omit<DockTab, "id">) {
-    const existing = this.dock.find(
-      (t) =>
-        t.kind === tab.kind &&
-        t.context === tab.context &&
-        t.namespace === tab.namespace &&
+  openDock(tab: DockTabInput) {
+    const existing = this.dock.find((t) => {
+      if (t.kind !== tab.kind || t.context !== tab.context || t.namespace !== tab.namespace) return false;
+      if (tab.kind === "logs" && tab.workload) {
+        return t.kind === "logs" && t.workload?.uid === tab.workload.uid;
+      }
+      return (
+        !(t.kind === "logs" && t.workload) &&
         t.pod === tab.pod &&
-        (!tab.container || !t.container || t.container === tab.container),
-    );
+        (!tab.container || !t.container || t.container === tab.container)
+      );
+    });
     if (existing) {
       this.activeDock = existing.id;
       this.dockOpen = true;
@@ -406,13 +486,81 @@ class AppState {
     this.dockOpen = false;
   }
 
-  toast(text: string, tone: Toast["tone"] = "info") {
-    const id = ++this.#toastSeq;
-    this.toasts = [...this.toasts, { id, tone, text }];
-    setTimeout(() => this.dismissToast(id), tone === "error" ? 8000 : 3500);
+  #scheduleToastTimer(id: number, ms: number) {
+    this.#clearToastTimer(id);
+    const handle = setTimeout(() => {
+      this.#toastTimers.delete(id);
+      this.dismissToast(id, false);
+    }, ms);
+    this.#toastTimers.set(id, { handle, remainingMs: ms, startedAt: Date.now() });
   }
 
-  dismissToast(id: number) {
+  #clearToastTimer(id: number) {
+    const t = this.#toastTimers.get(id);
+    if (!t) return;
+    if (t.handle) clearTimeout(t.handle);
+    this.#toastTimers.delete(id);
+  }
+
+  pauseToast(id: number) {
+    const t = this.#toastTimers.get(id);
+    if (!t || !t.handle) return;
+    clearTimeout(t.handle);
+    const elapsed = Date.now() - t.startedAt;
+    this.#toastTimers.set(id, {
+      handle: null,
+      remainingMs: Math.max(400, t.remainingMs - elapsed),
+      startedAt: Date.now(),
+    });
+  }
+
+  resumeToast(id: number) {
+    const entry = this.#toastTimers.get(id);
+    if (!entry) return;
+    this.#scheduleToastTimer(id, entry.remainingMs);
+  }
+
+  toast(
+    text: string,
+    tone: ToastTone = "info",
+    opts?: { key?: string; pinned?: boolean; retryable?: boolean },
+  ) {
+    const existing = opts?.key ? this.toasts.find((t) => t.key === opts.key) : undefined;
+    if (existing) {
+      if (
+        existing.text === text &&
+        existing.tone === tone &&
+        !!existing.pinned === !!opts?.pinned &&
+        !!existing.retryable === !!opts?.retryable
+      ) {
+        return;
+      }
+      this.#clearToastTimer(existing.id);
+      this.toasts = this.toasts.map((t) =>
+        t.id === existing.id
+          ? { ...t, text, tone, pinned: opts?.pinned, retryable: opts?.retryable }
+          : t,
+      );
+      if (!opts?.pinned) this.#scheduleToastTimer(existing.id, toastTimeoutMs(text, tone));
+      return;
+    }
+
+    const id = ++this.#toastSeq;
+    this.toasts = [
+      ...this.toasts,
+      { id, key: opts?.key, tone, text, pinned: opts?.pinned, retryable: opts?.retryable },
+    ];
+    if (!opts?.pinned) {
+      this.#scheduleToastTimer(id, toastTimeoutMs(text, tone));
+    }
+  }
+
+  dismissToast(id: number, byUser = true) {
+    this.#clearToastTimer(id);
+    const target = this.toasts.find((t) => t.id === id);
+    if (byUser && target?.key === "cluster-conn") {
+      this.#connToastDismissedText = target.text;
+    }
     this.toasts = this.toasts.filter((t) => t.id !== id);
   }
 

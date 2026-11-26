@@ -8,6 +8,7 @@ import {
   decodeBase64Text,
   maskSecretKey,
   measureTextWidth,
+  toastTimeoutMs,
   toneFor,
 } from "../src/lib/format.ts";
 import { groupResources } from "../src/lib/resources.ts";
@@ -21,7 +22,9 @@ import {
   unreadyWorkloadCells,
   workloadColumnIndices,
 } from "../src/lib/specs.ts";
+import { buildSelectorGroups } from "../src/lib/crdSpecs.ts";
 import { tokenizeYaml, tokenizeYamlLine } from "../src/lib/yamlHighlight.ts";
+import { computeLogWindow, entryOffset, type LogEntryItem } from "../src/lib/logWindow.ts";
 
 test("maskSecretKey masks keys after first 4 chars and short keys as ****", () => {
   assert.equal(maskSecretKey(""), "****");
@@ -85,6 +88,7 @@ test("measureTextWidth caches and clears cleanly", () => {
   const w1 = measureTextWidth("250m", "12px sans-serif");
   assert.equal(w1, 32);
   assert.equal(measureTextWidth("250m", "12px sans-serif"), w1);
+  assert.equal(measureTextWidth("250m", "12px sans-serif", true), w1);
   clearMeasureTextCache();
   assert.equal(measureTextWidth("250m", "12px sans-serif"), w1);
 });
@@ -272,4 +276,187 @@ test("groupResources places Helm section right after Cluster and toneFor maps He
   assert.equal(toneFor("superseded"), "muted");
   assert.equal(toneFor("pending-upgrade"), "warn");
   assert.equal(toneFor("failed"), "bad");
+});
+
+test("computeLogWindow handles unwrapped and wrapped rows without blank overshoot", () => {
+  const mk = (id: number, body: string, pod = "web-0"): LogEntryItem => ({
+    id,
+    lower: `${pod} ${body}`.toLowerCase(),
+    pod,
+    podColor: 0,
+    ts: "",
+    body,
+  });
+
+  // 400 wrapped lines (~48px each via measured cache, totalHeight = 19200px).
+  const entries = Array.from({ length: 400 }, (_, i) => mk(i + 1, "x".repeat(180)));
+  const measured = new Map<number, number>(entries.map((e) => [e.id, 48]));
+
+  // Previously fixed 16px math with scrollTop=16000 computed first=1000 > total=400 -> 0 items.
+  const wrapped = computeLogWindow(entries, {
+    wrap: true,
+    stickBottom: false,
+    scrollTop: 16000,
+    viewportHeight: 320,
+    viewportWidth: 640,
+    measured,
+    overscan: 10,
+  });
+  assert.ok(wrapped.items.length > 0);
+  assert.equal(wrapped.first, 323);
+  assert.equal(wrapped.topPad, 323 * 48);
+  assert.equal(wrapped.totalHeight, 400 * 48);
+  assert.equal(wrapped.topPad + wrapped.items.length * 48 + wrapped.bottomPad, wrapped.totalHeight);
+
+  // Toggling wrap calculates target offset for anchor preservation.
+  assert.equal(entryOffset(entries, 11, false, measured, 640), 10 * 16);
+  assert.equal(entryOffset(entries, 11, true, measured, 640), 10 * 48);
+
+  // Search-filtered shrink clamps unwrapped scrollTop so items stay visible.
+  const unwrappedClamped = computeLogWindow(entries.slice(0, 10), {
+    wrap: false,
+    stickBottom: false,
+    scrollTop: 50000,
+    viewportHeight: 320,
+    viewportWidth: 640,
+    measured,
+    overscan: 5,
+  });
+  assert.equal(unwrappedClamped.items.length, 10);
+  assert.equal(unwrappedClamped.topPad, 0);
+  assert.equal(unwrappedClamped.bottomPad, 0);
+});
+
+test("buildSpecRows and buildSelectorGroups render CRD specs cleanly with 5-item cap and CRD summary", () => {
+  const poolRows = buildSpecRows("CiliumLoadBalancerIPPool", {
+    spec: {
+      disabled: false,
+      allowFirstLastIPs: "Yes",
+      serviceSelector: { matchLabels: { env: "prod" }, matchExpressions: [{ key: "tier", operator: "In", values: ["web"] }] },
+      blocks: [
+        { cidr: "10.0.1.0/24" },
+        { cidr: "10.0.2.0/24" },
+        { cidr: "10.0.3.0/24" },
+        { cidr: "10.0.4.0/24" },
+        { cidr: "10.0.5.0/24" },
+        { start: "10.0.6.10", stop: "10.0.6.20" },
+      ],
+    },
+  });
+  const disabledRow = poolRows.find((r) => r.label === "Disabled");
+  assert.equal(disabledRow?.tone, "ok");
+  assert.equal(poolRows.find((r) => r.label === "Allow first last IPs")?.value, "Yes");
+  assert.equal(poolRows.some((r) => r.label.includes("Service selector")), false);
+  const blocksRow = poolRows.find((r) => r.label === "CIDR Blocks");
+  assert.ok(blocksRow);
+  assert.equal(blocksRow.moreCount, 1);
+  assert.ok(blocksRow.fullValue?.includes("start=10.0.6.10"));
+  assert.ok(!blocksRow.value.includes("item(s)"));
+
+  const l2Rows = buildSpecRows("CiliumL2AnnouncementPolicy", {
+    spec: { externalIPs: true, loadBalancerIPs: true, interfaces: ["eth0"] },
+  });
+  assert.equal(l2Rows.find((r) => r.label === "External IPs")?.value, "true");
+  assert.equal(l2Rows.find((r) => r.label === "Load balancer IPs")?.value, "true");
+
+  const egwRows = buildSpecRows("CiliumEgressGatewayPolicy", {
+    spec: { destinationCIDRs: ["0.0.0.0/0"], egressGateway: { egressIP: "10.0.0.10" } },
+  });
+  assert.equal(egwRows.find((r) => r.label === "Destination CIDRs")?.value, "0.0.0.0/0");
+
+  const cnodeRows = buildSpecRows("CiliumNode", {
+    spec: { bootid: "abc-123" },
+  });
+  assert.equal(cnodeRows.find((r) => r.label === "BootID")?.value, "abc-123");
+
+  const ccnpDoc = {
+    specs: [
+      {
+        description: "rule-one",
+        nodeSelector: { matchLabels: { role: "worker" } },
+        ingress: [{ fromEntities: ["host"], toPorts: [{ ports: [{ port: "9100", protocol: "TCP" }] }] }],
+        egress: [{}],
+      },
+      {
+        endpointSelector: { matchLabels: { app: "dns" } },
+        egress: [{ toEntities: ["world"] }],
+      },
+    ],
+  };
+  const ccnpRows = buildSpecRows("CiliumClusterwideNetworkPolicy", ccnpDoc);
+  const ccnpSelectors = buildSelectorGroups(ccnpDoc);
+  assert.deepEqual(
+    ccnpSelectors.map((s) => s.label),
+    ["Rule 1 / Node selector", "Rule 2 / Endpoint selector"],
+  );
+  const r1Ingress = ccnpRows.find((r) => r.label === "Rule 1 / Ingress")?.value ?? "";
+  assert.ok(r1Ingress.includes("port=9100"));
+  assert.ok(!r1Ingress.includes("item(s)"));
+  assert.equal(ccnpRows.find((r) => r.label === "Rule 1 / Egress")?.value, "* (allow all)");
+  assert.ok(ccnpRows.find((r) => r.label === "Rule 2 / Egress")?.value.includes("toEntities=[world]"));
+
+  const selectors = buildSelectorGroups({
+    spec: {
+      endpointSelector: {},
+      serviceSelector: { matchLabels: { env: "prod" } },
+      egressGateway: { nodeSelector: { matchLabels: { role: "gw" } } },
+    },
+  });
+  assert.deepEqual(
+    selectors.map((s) => s.label),
+    ["Endpoint selector", "Service selector", "Egress gateway / Node selector"],
+  );
+  assert.equal(selectors[0].chips[0].value, "* (all)");
+  assert.deepEqual(selectors[1].chips[0], { key: "env", value: "prod" });
+
+  const envoyRows = buildSpecRows("CiliumEnvoyConfig", {
+    spec: {
+      nodeSelector: { matchLabels: { role: "edge" } },
+      resources: [{ "@type": "type.googleapis.com/envoy.config.listener.v3.Listener", name: "http-listener", hugeBlob: {} }],
+    },
+  });
+  assert.equal(envoyRows.find((r) => r.label === "Resources")?.value, "Listener: http-listener");
+
+  const identRows = buildSpecRows("CiliumIdentity", {
+    "security-labels": { "k8s:app": "web", "k8s:io.kubernetes.pod.namespace": "default" },
+  });
+  assert.equal(identRows[0]?.label, "Security labels");
+  assert.ok(identRows[0]?.value.includes("k8s:app=web"));
+
+  const crdRows = buildSpecRows("CustomResourceDefinition", {
+    spec: {
+      group: "cilium.io",
+      scope: "Cluster",
+      names: { kind: "CiliumNode", plural: "ciliumnodes", shortNames: ["cn"] },
+      versions: [
+        {
+          name: "v2",
+          served: true,
+          storage: true,
+          additionalPrinterColumns: [{ name: "CiliumInternalIP", type: "string" }],
+          schema: { openAPIV3Schema: { properties: { spec: { type: "object" } } } },
+        },
+      ],
+    },
+    status: { storedVersions: ["v2"] },
+  });
+  assert.equal(crdRows.find((r) => r.label === "Group")?.value, "cilium.io");
+  assert.equal(crdRows.find((r) => r.label === "Versions")?.value, "v2 (storage, served)");
+  assert.equal(crdRows.find((r) => r.label === "Printer columns")?.value, "CiliumInternalIP (string)");
+  assert.equal(crdRows.some((r) => r.label.toLowerCase().includes("schema")), false);
+});
+
+test("toastTimeoutMs scales timeouts conditionally above 10 words and caps at 18s", () => {
+  assert.equal(toastTimeoutMs("Pod deleted", "ok"), 3500);
+  assert.equal(toastTimeoutMs("Path already added", "info"), 3500);
+  assert.equal(toastTimeoutMs("Large action pending", "warn"), 5500);
+  assert.equal(toastTimeoutMs("Connection refused", "error"), 8000);
+
+  const twentyWords = Array.from({ length: 20 }, (_, i) => `word${i}`).join(" ");
+  assert.equal(toastTimeoutMs(twentyWords, "info"), 3500 + 10 * 250);
+  assert.equal(toastTimeoutMs(twentyWords, "warn"), 5500 + 10 * 250);
+  assert.equal(toastTimeoutMs(twentyWords, "error"), 8000 + 10 * 250);
+
+  const huge = Array.from({ length: 80 }, () => "token").join(" ");
+  assert.equal(toastTimeoutMs(huge, "error"), 18_000);
 });

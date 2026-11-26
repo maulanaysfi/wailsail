@@ -2,6 +2,8 @@ package kube
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,9 +11,12 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 )
 
@@ -361,5 +366,66 @@ func TestValidateUpdateTarget(t *testing.T) {
 	nsRef := ResourceRef{Group: "", Version: "v1", Resource: "namespaces", Kind: "Namespace", Namespaced: false}
 	if err := validateUpdateTarget(makeObj("v1", "Namespace", "extra", "prod"), nsRef, "", "prod"); err == nil {
 		t.Fatal("expected cluster-scoped object with namespace to be rejected")
+	}
+}
+
+type testResetMapper struct {
+	*meta.DefaultRESTMapper
+}
+
+func (testResetMapper) Reset() {}
+
+func TestUpdateObjectUsesPutAndPreservesResourceVersion(t *testing.T) {
+	var gotMethod string
+	var gotPath string
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(b)
+	}))
+	defer srv.Close()
+
+	dyn, err := dynamic.NewForConfig(&rest.Config{Host: srv.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseMapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{{Version: "v1"}})
+	baseMapper.Add(schema.GroupVersionKind{Version: "v1", Kind: "PersistentVolume"}, meta.RESTScopeRoot)
+
+	svc := &Service{baseCtx: context.Background()}
+	clients := &Clients{Dynamic: dyn, Mapper: testResetMapper{baseMapper}}
+	pv := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "v1",
+		"kind":       "PersistentVolume",
+		"metadata": map[string]any{
+			"name":            "pv-1",
+			"resourceVersion": "99",
+			"managedFields":   []any{map[string]any{"manager": "kube-controller-manager"}},
+		},
+	}}
+
+	res, err := svc.updateObject(clients, pv, "")
+	if err != nil {
+		t.Fatalf("updateObject failed: %v", err)
+	}
+	if res.Kind != "PersistentVolume" || res.Name != "pv-1" {
+		t.Fatalf("unexpected result: %+v", res)
+	}
+	if gotMethod != http.MethodPut || gotPath != "/api/v1/persistentvolumes/pv-1" {
+		t.Fatalf("got %s %s, want PUT /api/v1/persistentvolumes/pv-1", gotMethod, gotPath)
+	}
+	metaOut, _ := gotBody["metadata"].(map[string]any)
+	if metaOut["resourceVersion"] != "99" {
+		t.Fatalf("resourceVersion = %v, want 99", metaOut["resourceVersion"])
+	}
+	if _, hasManaged := metaOut["managedFields"]; hasManaged {
+		t.Fatal("expected managedFields to be stripped before PUT")
+	}
+	if _, hasFinalizers := metaOut["finalizers"]; hasFinalizers {
+		t.Fatal("expected omitted finalizers not to be re-added")
 	}
 }

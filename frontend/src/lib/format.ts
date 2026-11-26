@@ -211,29 +211,47 @@ export function buildResourceMeter(
 }
 
 let measureCtx: CanvasRenderingContext2D | null | undefined;
+let measureSpan: HTMLSpanElement | null | undefined;
 const measureCache = new Map<string, number>();
 const MAX_MEASURE_CACHE = 500;
 
-/** Clear cached canvas text measurements (e.g. once web fonts finish loading). */
+/** Clear cached text measurements (e.g. once web fonts finish loading). */
 export function clearMeasureTextCache(): void {
   measureCache.clear();
 }
 
 /** Measure rendered text width in pixels for a CSS font string. */
-export function measureTextWidth(text: string, font: string): number {
+export function measureTextWidth(text: string, font: string, tabular = false): number {
   if (!text) return 0;
-  const key = `${font}\0${text}`;
+  const key = `${font}\0${tabular ? "t" : "p"}\0${text}`;
   const cached = measureCache.get(key);
   if (cached !== undefined) return cached;
-  if (measureCtx === undefined && typeof document !== "undefined") {
-    measureCtx = document.createElement("canvas").getContext("2d");
-  }
+
   let width: number;
-  if (measureCtx) {
-    measureCtx.font = font;
-    width = Math.ceil(measureCtx.measureText(text).width);
+  if (tabular && typeof document !== "undefined" && document.body) {
+    if (!measureSpan) {
+      measureSpan = document.createElement("span");
+      measureSpan.style.cssText =
+        "position:fixed;left:-9999px;top:-9999px;visibility:hidden;pointer-events:none;white-space:nowrap;";
+      document.body.appendChild(measureSpan);
+    }
+    measureSpan.style.font = font;
+    // Set after `style.font` because the CSS `font` shorthand resets font-variant-numeric.
+    measureSpan.style.fontVariantNumeric = "tabular-nums";
+    measureSpan.textContent = text;
+    const rawZoom = parseFloat(document.documentElement.style.zoom || "");
+    const zoom = Number.isFinite(rawZoom) && rawZoom > 0 ? rawZoom : 1;
+    width = Math.ceil(measureSpan.getBoundingClientRect().width / zoom);
   } else {
-    width = text.length * 8;
+    if (measureCtx === undefined && typeof document !== "undefined") {
+      measureCtx = document.createElement("canvas").getContext("2d");
+    }
+    if (measureCtx) {
+      measureCtx.font = font;
+      width = Math.ceil(measureCtx.measureText(text).width);
+    } else {
+      width = text.length * 8;
+    }
   }
   if (measureCache.size >= MAX_MEASURE_CACHE) measureCache.clear();
   measureCache.set(key, width);
@@ -320,4 +338,21 @@ export function buildConfigDataEntries(obj: Record<string, any> | null, isSecret
 
 export function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+export type ToastTone = "info" | "ok" | "warn" | "error";
+
+const TOAST_BASE_MS: Record<ToastTone, number> = {
+  info: 3500,
+  ok: 3500,
+  warn: 5500,
+  error: 8000,
+};
+
+/** Compute conditional auto-dismiss timeout (ms), extending past 10 words up to 18s. */
+export function toastTimeoutMs(text: string, tone: ToastTone = "info"): number {
+  const base = TOAST_BASE_MS[tone];
+  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+  if (words <= 10) return base;
+  return Math.min(18_000, base + (words - 10) * 250);
 }

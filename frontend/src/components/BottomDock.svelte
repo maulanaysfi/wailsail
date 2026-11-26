@@ -91,6 +91,7 @@
           namespace={t.namespace}
           pod={t.pod}
           initialContainer={t.container}
+          workload={t.workload}
           onStatus={(s) => app.setDockStatus(t.id, s)}
         />
       {:else}
@@ -120,6 +121,7 @@
     flex-direction: column;
     border-top: 1px solid var(--border);
     background: var(--panel);
+    min-width: 0;
     min-height: 0;
   }
   .dock.minimized {
@@ -215,6 +217,7 @@
   .body {
     display: flex;
     flex: 1;
+    min-width: 0;
     min-height: 0;
   }
   .body.hidden {

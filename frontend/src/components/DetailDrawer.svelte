@@ -22,10 +22,10 @@
     toneFor,
     type ResourceMeter,
   } from "../lib/format";
+  import { buildSelectorGroups } from "../lib/crdSpecs";
   import {
     buildContainersList,
     buildControlledPodsPlan,
-    buildSelectorEntries,
     buildSpecRows,
     filterControlledPods,
     podSummaryColumns,
@@ -51,8 +51,8 @@
   let editing = $state(false);
   let loading = $state(false);
   function defaultDrawerWidth(): number {
-    if (typeof window === "undefined") return 544;
-    return Math.min(1100, Math.max(384, Math.round((window.innerWidth / cssZoom()) * 0.4)));
+    if (typeof window === "undefined") return 600;
+    return Math.min(1100, Math.max(384, Math.round((window.innerWidth / cssZoom()) * 0.45)));
   }
 
   let saving = $state(false);
@@ -66,6 +66,14 @@
   const kk = $derived(kindKey(sel.type));
   const isPod = $derived(kk === "/Pod");
   const isHelmRelease = $derived(kk === "helm.sh/Release");
+  const canWorkloadLogs = $derived(
+    kk === "apps/Deployment" ||
+      kk === "apps/ReplicaSet" ||
+      kk === "apps/StatefulSet" ||
+      kk === "apps/DaemonSet" ||
+      kk === "batch/Job" ||
+      kk === "batch/CronJob",
+  );
   const canJumpOwner = $derived(kk === "/Pod" || kk === "apps/ReplicaSet" || kk === "batch/Job");
   const canForward = $derived(kk === "/Pod" || kk === "/Service");
   const canScale = $derived(scalableKinds.has(kk));
@@ -125,6 +133,13 @@
   let loadedKey = "";
 
   $effect(() => {
+    app.reconnectNonce;
+    if (error && !editing && !loading) {
+      untrack(() => load());
+    }
+  });
+
+  $effect(() => {
     // Reload only when the selected object or active cluster actually changes.
     const key = `${app.context}\0${sel.type.group}\0${sel.type.resource}\0${sel.namespace}\0${sel.name}`;
     if (key === loadedKey) return;
@@ -153,6 +168,7 @@
   });
 
   function startEdit() {
+    if (!isHelmRelease && neat) neat = false;
     draft = activeYaml;
     editing = true;
     tab = "yaml";
@@ -280,8 +296,25 @@
     }
   }
 
+  function openPodDock(podName: string, ns: string, kind: "logs" | "shell", container = "") {
+    app.openDock({ kind, title: podName, context: app.context, namespace: ns, pod: podName, container });
+  }
+
   function openDock(kind: "logs" | "shell", container = "") {
-    app.openDock({ kind, title: sel.name, context: app.context, namespace: sel.namespace, pod: sel.name, container });
+    openPodDock(sel.name, sel.namespace, kind, container);
+  }
+
+  function openWorkloadLogs() {
+    const uid = String(metadata.uid ?? "");
+    if (!uid) return;
+    app.openDock({
+      kind: "logs",
+      title: `${sel.type.kind}/${sel.name}`,
+      context: app.context,
+      namespace: sel.namespace,
+      pod: "",
+      workload: { kind: sel.type.kind, uid, name: sel.name },
+    });
   }
 
   function onKey(e: KeyboardEvent) {
@@ -333,7 +366,7 @@
     revealedVals[id] = !revealedVals[id];
   }
 
-  const selectorEntries = $derived.by(() => buildSelectorEntries(obj));
+  const selectorGroups = $derived.by(() => buildSelectorGroups(obj));
   const containersList = $derived.by(() => buildContainersList(sel.type.kind, obj, metrics));
 
   const POD_PAGE_SIZE = 5;
@@ -360,6 +393,7 @@
   $effect(() => {
     const ctx = app.context;
     const planKey = podsPlanKey;
+    app.reconnectNonce;
     const plan = untrack(() => podsPlan);
     if (!ctx || !planKey || !plan || plan.emptyHint) {
       untrack(() => {
@@ -545,7 +579,9 @@
   <div class="meter-box">
     {#if meter.showBar}
       <div class="meter-track" title={meter.hoverText}>
-        <div class={`meter-fill tone-bg-${meter.tone}`} style={`width:${meter.usedPct}%`}></div>
+        <div class="meter-clip">
+          <div class={`meter-fill tone-bg-${meter.tone}`} style={`width:${meter.usedPct}%`}></div>
+        </div>
         {#if meter.requestMarkPct !== null}
           <span class="meter-req-mark" class:warn={meter.requestMarkWarn} style={`left:${meter.requestMarkPct}%`}></span>
         {/if}
@@ -661,6 +697,22 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <polyline points="4 17 10 11 4 5" />
             <line x1="12" y1="19" x2="20" y2="19" />
+          </svg>
+        </button>
+      {:else if canWorkloadLogs}
+        <button
+          class="icon"
+          onclick={openWorkloadLogs}
+          disabled={!metadata.uid}
+          title={`Aggregated logs (${sel.type.kind} ${sel.name})`}
+          aria-label="Aggregated logs"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="8" y1="13" x2="16" y2="13" />
+            <line x1="8" y1="17" x2="16" y2="17" />
+            <line x1="8" y1="9" x2="10" y2="9" />
           </svg>
         </button>
       {/if}
@@ -944,29 +996,50 @@
           </dl>
         </section>
 
-        {#if specRows.length > 0 || selectorEntries.length > 0 || serviceFqdn}
+        {#if specRows.length > 0 || selectorGroups.length > 0 || serviceFqdn}
           <section class="section">
             <h4>Specification &amp; status</h4>
             <dl class="kv-grid">
               {#each specRows as r (r.label)}
+                {@const ek = `spec:${r.label}`}
+                {@const open = !!expandedMeta[ek]}
+                {@const displayVal = r.fullValue && open ? r.fullValue : r.value}
                 <dt>{r.label}</dt>
                 {#if r.copy}
                   <dd class="val-copy">
-                    {@render copyBtn(r.value, `spec:${r.label}`, r.label)}
-                    <span class={`val-text ${r.mono ? "mono " : ""}${r.tone ? `tone-${r.tone}` : ""}`}>{r.value}</span>
+                    {@render copyBtn(displayVal, ek, r.label)}
+                    <span class={`val-text ${r.mono ? "mono " : ""}${r.tone ? `tone-${r.tone}` : ""}`}>{displayVal}{#if r.fullValue}<button
+                          class="ellipsis-btn"
+                          onclick={() => toggleExpand(ek)}
+                          title={open ? `Collapse ${r.label}` : `Show all ${r.label} items`}
+                        >{open ? "(less)" : `(+${r.moreCount} more)`}</button>{/if}</span>
                   </dd>
                 {:else}
-                  <dd class={`val-text ${r.mono ? "mono " : ""}${r.tone ? `tone-${r.tone}` : ""}`}>{r.value}</dd>
+                  <dd class={`val-text ${r.mono ? "mono " : ""}${r.tone ? `tone-${r.tone}` : ""}`}>{displayVal}{#if r.fullValue}<button
+                        class="ellipsis-btn"
+                        onclick={() => toggleExpand(ek)}
+                        title={open ? `Collapse ${r.label}` : `Show all ${r.label} items`}
+                      >{open ? "(less)" : `(+${r.moreCount} more)`}</button>{/if}</dd>
                 {/if}
               {/each}
-              {#if selectorEntries.length > 0}
-                <dt>Selector</dt>
+              {#each selectorGroups as sg (sg.label)}
+                {@const ek = `sel:${sg.label}`}
+                {@const open = !!expandedMeta[ek]}
+                {@const shownChips = sg.chips.length > 5 && !open ? sg.chips.slice(0, 5) : sg.chips}
+                <dt>{sg.label}</dt>
                 <dd class="chips">
-                  {#each selectorEntries as [k, v] (k)}
-                    <span class="chip mono val-text"><span class="chip-k">{k}=</span>{v}</span>
+                  {#each shownChips as chip, ci (`${chip.key ?? ""}:${chip.value}:${ci}`)}
+                    <span class="chip mono val-text">{#if chip.key}<span class="chip-k">{chip.key}=</span>{/if}{chip.value}</span>
                   {/each}
+                  {#if sg.chips.length > 5}
+                    <button
+                      class="ellipsis-btn"
+                      onclick={() => toggleExpand(ek)}
+                      title={open ? `Collapse ${sg.label}` : `Show all ${sg.chips.length} selector items`}
+                    >{open ? "(less)" : `(+${sg.chips.length - 5} more)`}</button>
+                  {/if}
                 </dd>
-              {/if}
+              {/each}
               {#if serviceFqdn}
                 <dt>Cluster FQDN</dt>
                 <dd class="val-copy">
@@ -1155,6 +1228,7 @@
                 <thead>
                   <tr>
                     <th class="col-pod-name">Name</th>
+                    <th class="col-pod-act"></th>
                     <th class="col-pod-ready">Ready</th>
                     <th class="col-pod-status">Status</th>
                     <th class="col-pod-age">Age</th>
@@ -1196,6 +1270,30 @@
                         {#if podsPlan.mode === "node" && p.namespace}
                           <div class="mono muted pod-ns val-text">{p.namespace}</div>
                         {/if}
+                      </td>
+                      <td class="col-pod-act">
+                        <div class="pod-acts">
+                          <button
+                            class="mini"
+                            onclick={(e) => {
+                              e.stopPropagation();
+                              openPodDock(p.name, p.namespace, "logs");
+                            }}
+                            title={`View logs for Pod ${p.name}`}
+                          >
+                            Logs
+                          </button>
+                          <button
+                            class="mini"
+                            onclick={(e) => {
+                              e.stopPropagation();
+                              openPodDock(p.name, p.namespace, "shell");
+                            }}
+                            title={`Open shell in Pod ${p.name}`}
+                          >
+                            Shell
+                          </button>
+                        </div>
                       </td>
                       <td class="col-pod-ready mono val-text" class:tone-warn={podUnready}>{podReady}</td>
                       <td class={`col-pod-status val-text tone-${toneFor(podStatus)}`}>{podStatus}</td>
@@ -1751,22 +1849,29 @@
   .pods-table {
     table-layout: fixed;
   }
+  .pods-table td {
+    vertical-align: middle;
+  }
   .pods-table .col-pod-name {
     min-width: 0;
+    padding-right: var(--space-3);
   }
   .pods-table .col-pod-ready {
-    width: 50px;
+    width: 52px;
+    padding-right: var(--space-3);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
   }
   .pods-table .col-pod-status {
-    width: 92px;
+    width: 88px;
+    padding-right: var(--space-3);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
   .pods-table .col-pod-age {
-    width: 44px;
+    width: 48px;
+    padding-right: var(--space-3);
     text-align: right;
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
@@ -1777,6 +1882,16 @@
     padding-right: 0;
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
+  }
+  .pods-table .col-pod-act {
+    width: 112px;
+    padding-right: var(--space-3);
+    white-space: nowrap;
+  }
+  .pod-acts {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
   }
   .pods-table tbody tr.pod-row {
     cursor: pointer;

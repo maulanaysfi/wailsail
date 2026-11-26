@@ -1,13 +1,16 @@
 import type { Column, ContainerMetrics, Row } from "./api";
+import {
+  buildCrdSpecRows,
+  buildCustomResourceDefinitionRows,
+  buildSelectorGroups,
+  createKvBuilder,
+  type KV,
+  type SelectorChip,
+  type SelectorGroup,
+} from "./crdSpecs.ts";
 import { buildResourceMeter, toneFor, type ResourceMeter } from "./format.ts";
 
-export interface KV {
-  label: string;
-  value: string;
-  tone?: string;
-  mono?: boolean;
-  copy?: boolean;
-}
+export { buildSelectorGroups, type KV, type SelectorChip, type SelectorGroup };
 
 export interface ContainerSummary {
   name: string;
@@ -26,12 +29,8 @@ export function buildSpecRows(kind: string, obj: Record<string, any> | null): KV
   if (!obj) return [];
   const spec = (obj.spec ?? {}) as Record<string, any>;
   const status = (obj.status ?? {}) as Record<string, any>;
-  const out: KV[] = [];
-
-  const add = (label: string, val: unknown, opts?: { tone?: string; mono?: boolean; copy?: boolean }) => {
-    if (val === undefined || val === null || val === "") return;
-    out.push({ label, value: String(val), tone: opts?.tone, mono: opts?.mono, copy: opts?.copy });
-  };
+  const b = createKvBuilder();
+  const add = b.add;
 
   if (kind === "Deployment" || kind === "StatefulSet" || kind === "ReplicaSet") {
     const desired = spec.replicas ?? 1;
@@ -149,23 +148,13 @@ export function buildSpecRows(kind: string, obj: Record<string, any> | null): KV
   } else if (kind === "ConfigMap" || kind === "Secret") {
     add("Type", obj.type, { mono: true });
     if (obj.immutable !== undefined) add("Immutable", String(obj.immutable));
+  } else if (kind === "CustomResourceDefinition") {
+    buildCustomResourceDefinitionRows(b, spec, status);
   } else {
-    for (const [sectionName, sectionObj] of [
-      ["spec", spec],
-      ["status", status],
-    ] as const) {
-      for (const [k, v] of Object.entries(sectionObj)) {
-        if (k === "conditions" || v === null || v === undefined) continue;
-        if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
-          add(`${sectionName}.${k}`, v);
-        } else if (Array.isArray(v)) {
-          add(`${sectionName}.${k}`, `${v.length} item(s)`);
-        }
-      }
-    }
+    buildCrdSpecRows(b, obj, spec, status);
   }
 
-  return out;
+  return b.build();
 }
 
 /** Extract label selector entries from spec.selector (matchLabels or flat map). */

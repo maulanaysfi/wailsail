@@ -58,7 +58,7 @@ spec:
 				},
 				{
 					Name: "templates/NOTES.txt",
-					Data: []byte(`Release {{ .Release.Name }} rev {{ .Release.Revision }} running {{ .Values.replicaCount }} replicas.`),
+					Data: []byte(`Release {{ .Release.Name }} rev {{ .Release.Revision }} minor {{ (semver .Capabilities.KubeVersion.Version).Minor }} api {{ .Capabilities.APIVersions.Has "apps/v1" }} running {{ .Values.replicaCount }} replicas.`),
 				},
 			},
 		},
@@ -141,7 +141,35 @@ func TestRenderHelmChartAndCoalesceValues(t *testing.T) {
 			t.Fatalf("rendered manifest missing %q:\n%s", want, manifest)
 		}
 	}
-	if !strings.Contains(notes, "rev 2 running 5 replicas") {
+	if !strings.Contains(notes, "rev 2 minor 31 api false running 5 replicas") {
 		t.Fatalf("unexpected rendered notes: %q", notes)
+	}
+}
+
+func TestHelmSprigFunctions(t *testing.T) {
+	ch := &helmChart{
+		Metadata: &helmChartMeta{Name: "cilium", Version: "1.16.0"},
+		Templates: []*helmFile{
+			{
+				Name: "templates/cm.yaml",
+				Data: []byte(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test
+data:
+  minor: {{ (semver .Capabilities.KubeVersion.GitVersion).Minor | quote }}
+  cmp: {{ semverCompare "^1.30.0" .Capabilities.KubeVersion.GitVersion | quote }}
+  arr: {{ (fromYamlArray "[a, b]") | len | quote }}`),
+			},
+		},
+	}
+	m, _, err := renderHelmChart(ch, "cilium", "kube-system", 1, map[string]any{}, "v1.31.2", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`minor: "31"`, `cmp: "true"`, `arr: "2"`} {
+		if !strings.Contains(m, want) {
+			t.Fatalf("missing %q in:\n%s", want, m)
+		}
 	}
 }

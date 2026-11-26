@@ -27,7 +27,7 @@
 - **Discovery-Driven Browser & Helm Releases** — Automatically discovers built-in and custom resources (`CRDs`) plus in-cluster **Helm Releases** (revision history, User/Merged values inspection, live Values edit → Upgrade, Rollback, rendered Manifest, and Uninstall) in a resizable, pinnable sidebar.
 - **Live Watch Tables** — Streams `meta.k8s.io/v1` tables with batched updates, draggable/resizable columns, live Pod CPU & memory usage meters, and one-click `Jump to Owner`.
 - **Detail Drawer & Neat YAML** — Inspect metadata, resource specs, masked/uncensorable `Secret` & `ConfigMap` data pairs, container meters, conditions, live paginated workload/Service/Node `Pods` tables, and events—or view/edit syntax-highlighted YAML with optional **Neat** cleanup and Server-Side Apply.
-- **Persistent Logs & Container Shell Dock** — Follow selectable container logs (with high-contrast timestamps and filtering) and open interactive `@xterm/xterm` shells side-by-side in a persistent bottom dock.
+- **Persistent Logs & Container Shell Dock** — Follow selectable container logs (with high-contrast timestamps, filtering, and aggregated color-coded workload logs across `Deployment`/`StatefulSet`/`DaemonSet`/`ReplicaSet`/`Job`/`CronJob` Pods) and open interactive `@xterm/xterm` shells side-by-side in a persistent bottom dock.
 - **Port Forwarding & Preferences** — Forward Pod or Service ports to `127.0.0.1`, switch Light/Dark/System themes, and scale the UI (`50%`–`150%`).
 
 ## Installation

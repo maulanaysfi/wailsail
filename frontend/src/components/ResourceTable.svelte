@@ -41,12 +41,16 @@
   let fontGen = $state(0);
 
   $effect(() => {
-    if (typeof document !== "undefined" && document.fonts?.ready) {
-      document.fonts.ready.then(() => {
-        clearMeasureTextCache();
-        fontGen++;
-      });
-    }
+    if (typeof document === "undefined" || !document.fonts) return;
+    const invalidate = () => {
+      clearMeasureTextCache();
+      fontGen++;
+    };
+    document.fonts.ready.then(invalidate);
+    document.fonts.addEventListener?.("loadingdone", invalidate);
+    return () => {
+      document.fonts.removeEventListener?.("loadingdone", invalidate);
+    };
   });
 
   const allNamespaces = $derived(!!app.current?.namespaced && app.namespace === "");
@@ -54,11 +58,12 @@
   const isPod = $derived(curKindKey === "/Pod");
   const resScopeKey = $derived(app.current ? resourceKey(app.current) : "_");
 
-  // Start a watch whenever the context, resource type or namespace changes.
+  // Start a watch whenever the context, resource type, namespace or reconnect state changes.
   $effect(() => {
     const ctx = app.context;
     const r = app.current;
     const ns = r?.namespaced ? app.namespace : "";
+    app.reconnectNonce;
     if (!ctx || !r) return;
     untrack(() => {
       rows.clear();
@@ -141,14 +146,14 @@
     podMetrics;
     fontGen;
     if (!isPod) return { cpu: 0, memory: 0 };
-    const font = '12px "Google Sans Flex", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    const font = '12px "Google Sans Flex", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     let cpu = 0;
     let memory = 0;
     for (const r of rows.values()) {
       const ct = podMeterFor(r, "cpu").usedText;
       const mt = podMeterFor(r, "memory").usedText;
-      cpu = Math.max(cpu, measureTextWidth(ct, font));
-      memory = Math.max(memory, measureTextWidth(mt, font));
+      cpu = Math.max(cpu, measureTextWidth(ct, font, true));
+      memory = Math.max(memory, measureTextWidth(mt, font, true));
     }
     return { cpu, memory };
   });
@@ -432,7 +437,9 @@
     <div class="cell-meter" style={`--text-w:${maxPx}px`}>
       <span class="cell-meter-text">{meter.usedText}</span>
       <div class="meter-track" title={meter.hoverText}>
-        <div class={`meter-fill tone-bg-${meter.tone}`} style={`width:${meter.usedPct}%`}></div>
+        <div class="meter-clip">
+          <div class={`meter-fill tone-bg-${meter.tone}`} style={`width:${meter.usedPct}%`}></div>
+        </div>
         {#if meter.requestMarkPct !== null}
           <span class="meter-req-mark" class:warn={meter.requestMarkWarn} style={`left:${meter.requestMarkPct}%`}></span>
         {/if}
@@ -601,7 +608,7 @@
   thead th {
     position: sticky;
     top: 0;
-    z-index: 2;
+    z-index: 4;
     background: var(--bg);
     text-align: left;
     font-weight: 600;
@@ -643,7 +650,7 @@
     bottom: 0;
     width: 7px;
     cursor: col-resize;
-    z-index: 3;
+    z-index: 5;
   }
   .col-resizer:hover,
   .col-resizer.active {
@@ -695,8 +702,6 @@
   }
   .cell-meter-text {
     text-align: left;
-    overflow: hidden;
-    text-overflow: clip;
   }
   .empty {
     text-align: center;
