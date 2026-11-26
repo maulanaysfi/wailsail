@@ -449,6 +449,11 @@ class AppState {
     this.activePageTab = next.activeId;
   }
 
+  closeAllPageTabs() {
+    this.pageTabs = [];
+    this.activePageTab = null;
+  }
+
   #resolveTarget(ref: { apiVersion?: string; kind: string; name: string } | undefined | null, namespace: string): Selection | null {
     if (!ref?.kind || !ref?.name) return null;
     const parts = (ref.apiVersion ?? "").split("/");
