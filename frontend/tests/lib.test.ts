@@ -27,6 +27,7 @@ import {
 import { buildSelectorGroups } from "../src/lib/crdSpecs.ts";
 import { tokenizeYaml, tokenizeYamlLine } from "../src/lib/yamlHighlight.ts";
 import { computeLogWindow, entryOffset, type LogEntryItem } from "../src/lib/logWindow.ts";
+import { pushNavEntry, type NavState } from "../src/lib/nav.ts";
 
 test("maskSecretKey masks keys after first 4 chars and short keys as ****", () => {
   assert.equal(maskSecretKey(""), "****");
@@ -474,4 +475,28 @@ test("formatLogTimestamp converts RFC3339 timestamps to selected timezone as YYY
   assert.equal(zones[0].value, "local");
   assert.equal(zones[1].value, "UTC");
   assert.ok(zones.some((z) => z.value === "Asia/Jakarta"));
+});
+
+test("pushNavEntry tracks resource and object visits while deduplicating and truncating forward branch", () => {
+  let nav: NavState = { entries: [], index: -1 };
+  nav = pushNavEntry(nav, { resourceKey: "/pods", selection: null });
+  nav = pushNavEntry(nav, { resourceKey: "/pods", selection: null }); // duplicate skipped
+  assert.equal(nav.entries.length, 1);
+  assert.equal(nav.index, 0);
+
+  nav = pushNavEntry(nav, {
+    resourceKey: "apps/deployments",
+    selection: { resourceKey: "apps/deployments", namespace: "default", name: "web" },
+  });
+  nav = pushNavEntry(nav, {
+    resourceKey: "/pods",
+    selection: { resourceKey: "/pods", namespace: "default", name: "web-1" },
+  });
+  assert.equal(nav.index, 2);
+
+  // Simulate stepping Back to index 1 then visiting a new resource.
+  nav = pushNavEntry({ ...nav, index: 1 }, { resourceKey: "/services", selection: null });
+  assert.equal(nav.entries.length, 3);
+  assert.equal(nav.index, 2);
+  assert.equal(nav.entries[2].resourceKey, "/services");
 });

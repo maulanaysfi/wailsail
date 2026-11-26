@@ -9,6 +9,7 @@ import {
   type SettingsData,
 } from "./api";
 import { toastTimeoutMs, type ToastTone } from "./format";
+import { pushNavEntry, type NavEntry, type NavState } from "./nav";
 import { kindKey, resourceKey } from "./resources";
 
 export interface Selection {
@@ -97,6 +98,15 @@ class AppState {
   cancelYamlEdit: (() => void) | null = null;
   reconnectNonce = $state(0);
   now = $state(Date.now());
+  #nav = $state<NavState>({ entries: [], index: -1 });
+
+  get canGoBack(): boolean {
+    return this.#nav.index > 0;
+  }
+
+  get canGoForward(): boolean {
+    return this.#nav.index >= 0 && this.#nav.index < this.#nav.entries.length - 1;
+  }
 
   #toastSeq = 0;
   #toastTimers = new Map<number, { handle: ReturnType<typeof setTimeout> | null; remainingMs: number; startedAt: number }>();
@@ -153,12 +163,14 @@ class AppState {
     const wantResKey = opts?.preserveResourceKey ?? (this.current ? resourceKey(this.current) : "");
     const wantSelection = opts?.preserveSelection !== undefined ? opts.preserveSelection : (this.context === name ? this.selection : null);
 
+    const isSwitch = this.context !== name;
     this.context = name;
     this.selection = null;
     this.current = null;
     this.resources = [];
     this.namespaces = [];
     this.serverVersion = "";
+    if (isSwitch) this.#nav = { entries: [], index: -1 };
     this.#connToastDismissedText = "";
     this.#setConnectionError("");
     this.saveSettings({ lastContext: name });
@@ -214,6 +226,9 @@ class AppState {
       this.current = preserved ?? pods ?? this.resources[0] ?? null;
       if (wantSelection && this.current && resourceKey(wantSelection.type) === resourceKey(this.current)) {
         this.selection = { ...wantSelection, type: this.current };
+      }
+      if (this.current && this.#nav.entries.length === 0) {
+        this.#recordNav();
       }
     } finally {
       this.#hydrating = false;
@@ -298,6 +313,50 @@ class AppState {
     this.toast(msg, "error", { key: "cluster-conn", pinned: true, retryable: !!this.context });
   }
 
+  #recordNav() {
+    if (!this.current) return;
+    const entry: NavEntry = {
+      resourceKey: resourceKey(this.current),
+      selection: this.selection
+        ? {
+            resourceKey: resourceKey(this.selection.type),
+            namespace: this.selection.namespace,
+            name: this.selection.name,
+          }
+        : null,
+    };
+    this.#nav = pushNavEntry(this.#nav, entry);
+  }
+
+  #applyNavEntry(entry: NavEntry) {
+    const res = this.resources.find((r) => resourceKey(r) === entry.resourceKey);
+    if (!res) return;
+    this.current = res;
+    if (!entry.selection) {
+      this.selection = null;
+      return;
+    }
+    const selType = this.resources.find((r) => resourceKey(r) === entry.selection!.resourceKey) ?? res;
+    if (selType.namespaced && this.namespace !== "" && this.namespace !== entry.selection.namespace) {
+      this.namespace = entry.selection.namespace;
+    }
+    this.selection = { type: selType, namespace: entry.selection.namespace, name: entry.selection.name };
+  }
+
+  goBack() {
+    if (!this.canGoBack) return;
+    const nextIdx = this.#nav.index - 1;
+    this.#nav = { ...this.#nav, index: nextIdx };
+    this.#applyNavEntry(this.#nav.entries[nextIdx]);
+  }
+
+  goForward() {
+    if (!this.canGoForward) return;
+    const nextIdx = this.#nav.index + 1;
+    this.#nav = { ...this.#nav, index: nextIdx };
+    this.#applyNavEntry(this.#nav.entries[nextIdx]);
+  }
+
   selectNamespace(ns: string) {
     this.namespace = ns;
     this.selection = null;
@@ -307,6 +366,16 @@ class AppState {
 
   selectResource(r: ResourceType) {
     this.current = r;
+    this.selection = null;
+    this.#recordNav();
+  }
+
+  selectObject(sel: Selection) {
+    this.selection = sel;
+    this.#recordNav();
+  }
+
+  closeSelection() {
     this.selection = null;
   }
 
@@ -327,6 +396,7 @@ class AppState {
     }
     this.current = target;
     this.selection = { type: target, namespace: ns, name: ref.name };
+    this.#recordNav();
   }
 
   jumpToOwner(owner: { apiVersion?: string; kind: string; name: string } | undefined | null, namespace: string) {
@@ -580,7 +650,7 @@ class AppState {
 
   openEdit(sel: Selection) {
     this.editOnOpen = true;
-    this.selection = { ...sel };
+    this.selectObject({ ...sel });
   }
 
   async scaleResource(sel: Selection, n: number): Promise<boolean> {

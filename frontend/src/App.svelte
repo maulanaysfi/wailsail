@@ -90,7 +90,7 @@
         app.forwardTarget = null;
       } else if (app.cancelYamlEdit) {
         app.cancelYamlEdit();
-      } else if (app.selection) app.selection = null;
+      } else if (app.selection) app.closeSelection();
     }
   }
 </script>
@@ -236,7 +236,26 @@
   </div>
 
   <footer class="bottom-bar">
+    {#if app.context}
+      <span class="cluster-pill">
+        <span class={`conn-dot ${app.clusterStatus}`}></span>
+        {#if app.serverVersion}
+          <span class="pill">{app.serverVersion}</span>
+        {/if}
+      </span>
+    {/if}
     <span class="grow"></span>
+    <button
+      class="ghost mini"
+      onclick={() => (app.showApply = true)}
+      disabled={!app.context}
+      title="Apply YAML or JSON manifest to current cluster"
+    >
+      Apply
+    </button>
+    <button class="ghost mini" onclick={() => (app.showForwards = true)} title="Manage active local port forwards">
+      Forwards
+    </button>
     <button
       class="ghost mini"
       onclick={() => (app.dockOpen = !app.dockOpen)}
@@ -418,11 +437,32 @@
   .bottom-bar {
     display: flex;
     align-items: center;
+    gap: var(--space-2);
     height: var(--control-h);
     padding: 0 var(--space-3);
     border-top: 1px solid var(--border);
     background: var(--panel);
     flex-shrink: 0;
+  }
+  .cluster-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .conn-dot {
+    width: var(--space-2);
+    height: var(--space-2);
+    border-radius: 999px;
+    background: var(--muted);
+  }
+  .conn-dot.connected {
+    background: var(--ok);
+  }
+  .conn-dot.slow {
+    background: var(--warn);
+  }
+  .conn-dot.disconnected {
+    background: var(--bad);
   }
   .bottom-bar .grow {
     flex: 1;

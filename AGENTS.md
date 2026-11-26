@@ -42,7 +42,7 @@
 │   ├── bindings/           # Auto-generated Wails v3 TS bindings (do not hand-edit)
 │   └── src/
 │       ├── App.svelte
-│       ├── lib/            # api.ts, crdSpecs.ts, format.ts, logWindow.ts, resources.ts, specs.ts, store.svelte.ts, yamlHighlight.ts
+│       ├── lib/            # api.ts, crdSpecs.ts, format.ts, logWindow.ts, nav.ts, resources.ts, specs.ts, store.svelte.ts, yamlHighlight.ts
 │       └── components/     # TopBar, Sidebar, ResourceTable, DetailDrawer, YamlEditor, BottomDock, LogViewer, TerminalView, modals
 ├── build/                  # Wails v3 config.yml, icons, desktop/installer packaging templates
 ├── scripts/                # Build, test, validation, and SHA256SUMS release script (build.sh)

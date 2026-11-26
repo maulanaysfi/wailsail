@@ -446,10 +446,10 @@
   function select(r: Row) {
     if (!app.current) return;
     if (isSelected(r)) {
-      app.selection = null;
+      app.closeSelection();
       return;
     }
-    app.selection = { type: app.current, namespace: r.namespace, name: r.name };
+    app.selectObject({ type: app.current, namespace: r.namespace, name: r.name });
   }
 
   function isSelected(r: Row) {

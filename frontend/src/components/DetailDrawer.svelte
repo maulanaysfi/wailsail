@@ -176,6 +176,7 @@
       revealedKeys = {};
       revealedVals = {};
       podPage = 0;
+      focusedPodKey = "";
       revPage = 0;
       load();
     });
@@ -372,6 +373,7 @@
   let podLoading = $state(false);
   let podError = $state("");
   let podPage = $state(0);
+  let focusedPodKey = $state("");
 
   const podsPlan = $derived.by(() => buildControlledPodsPlan(kk, obj, sel.namespace));
   const podsPlanKey = $derived(
@@ -602,7 +604,7 @@
       <strong>{sel.name}</strong>
       {#if sel.namespace}<span class="ns">{sel.namespace}</span>{/if}
     </div>
-    <button class="ghost close" onclick={() => (app.selection = null)} title="Close detail panel (Esc)">✕</button>
+    <button class="ghost close" onclick={() => app.closeSelection()} title="Close detail panel (Esc)">✕</button>
   </header>
 
   <div class="actions">
@@ -1223,7 +1225,6 @@
                 <thead>
                   <tr>
                     <th class="col-pod-name">Name</th>
-                    <th class="col-pod-act"></th>
                     <th class="col-pod-ready">Ready</th>
                     <th class="col-pod-status">Status</th>
                     <th class="col-pod-age">Age</th>
@@ -1243,52 +1244,18 @@
                     }).ready}
                     <tr
                       class="pod-row"
-                      onclick={() => {
-                        if (!window.getSelection()?.toString()) {
-                          app.jumpToResource({ kind: "Pod", name: p.name }, p.namespace);
-                        }
+                      class:focused={focusedPodKey === p.key}
+                      onclick={() => (focusedPodKey = p.key)}
+                      ondblclick={() => {
+                        focusedPodKey = p.key;
+                        app.jumpToResource({ kind: "Pod", name: p.name }, p.namespace);
                       }}
                     >
                       <td class="col-pod-name">
-                        <button
-                          class="pod-link mono val-text"
-                          onclick={(e) => {
-                            e.stopPropagation();
-                            if (!window.getSelection()?.toString()) {
-                              app.jumpToResource({ kind: "Pod", name: p.name }, p.namespace);
-                            }
-                          }}
-                          title={`Open Pod ${p.namespace ? `${p.namespace}/` : ""}${p.name}`}
-                        >
-                          {p.name}
-                        </button>
+                        <span class="pod-name mono val-text">{p.name}</span>
                         {#if podsPlan.mode === "node" && p.namespace}
                           <div class="mono muted pod-ns val-text">{p.namespace}</div>
                         {/if}
-                      </td>
-                      <td class="col-pod-act">
-                        <div class="pod-acts">
-                          <button
-                            class="mini"
-                            onclick={(e) => {
-                              e.stopPropagation();
-                              openPodDock(p.name, p.namespace, "logs");
-                            }}
-                            title={`View logs for Pod ${p.name}`}
-                          >
-                            Logs
-                          </button>
-                          <button
-                            class="mini"
-                            onclick={(e) => {
-                              e.stopPropagation();
-                              openPodDock(p.name, p.namespace, "shell");
-                            }}
-                            title={`Open shell in Pod ${p.name}`}
-                          >
-                            Shell
-                          </button>
-                        </div>
                       </td>
                       <td class="col-pod-ready mono val-text" class:tone-warn={podUnready}>{podReady}</td>
                       <td class={`col-pod-status val-text tone-${toneFor(podStatus)}`}>{podStatus}</td>
@@ -1878,36 +1845,23 @@
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
   }
-  .pods-table .col-pod-act {
-    width: 112px;
-    padding-right: var(--space-3);
-    white-space: nowrap;
-  }
-  .pod-acts {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
   .pods-table tbody tr.pod-row {
     cursor: pointer;
   }
-  .pods-table tbody tr.pod-row:hover {
+  .pods-table tbody tr.pod-row:hover,
+  .pods-table tbody tr.pod-row.focused {
     background: var(--hover);
   }
-  .pod-link {
-    all: unset;
+  .pods-table tbody tr.pod-row.focused td:first-child {
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+  .pod-name {
     display: block;
     width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     color: var(--text-strong);
-    cursor: pointer;
-  }
-  .pod-link:focus-visible {
-    outline: 1px solid var(--accent);
-    outline-offset: 1px;
-    border-radius: 2px;
   }
   .pod-ns {
     font-size: 11px;

@@ -7,10 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Top Bar History Navigation (`TopBar`, `store.svelte.ts`, `nav.ts`)**: Added `←` / `→` Back and Forward navigation buttons in `TopBar` stepping through visited resource types and opened objects (excluding namespace changes and drawer closes, disabled when at history bounds).
 - **Row Context Menu & Scale Modal (`ResourceTable`, `App.svelte`, `store.svelte.ts`)**: Added themed right-click action menus on resource rows with icons matching `DetailDrawer` (`Jump to Owner`, `Port forward`, `Scale`, `Restart`, `View logs`, `Exec shell`, `Edit YAML`/`Edit values`, `Delete`/`Uninstall`), plus a centered `Scale` modal supporting arrow keys and `Enter` to apply.
 - **Log Timezone Setting (`settings`, `SettingsModal`, `LogViewer`)**: Added a persistent `Timezone` selector (`local` default, `UTC`, and IANA zones) converting Kubernetes log timestamps to `YYYY-MM-DD HH:mm:ss`.
 
 ### Changed
+- **Controlled Pods Focus & Table Actions (`DetailDrawer`)**: Switched controlled `Pods` rows to single-click highlight and double-click open (keeping Pod names plain monospace text), and removed row `Logs`/`Shell` action buttons.
+- **Bar Reorganization (`TopBar`, `App.svelte`)**: Removed the app icon from `TopBar`, moved the cluster status dot and Kubernetes version chip to the left of the bottom status bar, and moved `Apply` and `Forwards` to the right of the bottom status bar before `Dock`.
 - **Sidebar Context & Minimal Top Bar (`Sidebar`, `TopBar`)**: Moved the `Context` selector with a compact `Context` heading to the top of `Sidebar`, and removed the redundant `Namespace` label in `TopBar` leaving the dropdown alone.
 - **Plain Controlled Pod Names & Port-Forward Icon (`DetailDrawer`, `ResourceTable`)**: Styled controlled Pod name buttons cleanly (`var(--text-strong)`, monospace, no blue color or hover underline) matching the main table, and updated the context menu `Port forward` icon to a box-with-arrow `forward` icon.
 - **Double-Click `DetailDrawer` Toggle & Single-Click Focus (`ResourceTable`)**: Single-clicking a row highlights it as focused/active while double-clicking toggles `DetailDrawer`.

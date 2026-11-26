@@ -7,7 +7,30 @@
 </script>
 
 <header class="topbar">
-  <img class="logo" src="/icon.png" alt="wailsail" width="24" height="24" draggable="false" />
+  <div class="nav-btns">
+    <button
+      class="ghost icon"
+      disabled={!app.canGoBack}
+      onclick={() => app.goBack()}
+      title="Back"
+      aria-label="Back"
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <polyline points="15 18 9 12 15 6" />
+      </svg>
+    </button>
+    <button
+      class="ghost icon"
+      disabled={!app.canGoForward}
+      onclick={() => app.goForward()}
+      title="Forward"
+      aria-label="Forward"
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <polyline points="9 18 15 12 9 6" />
+      </svg>
+    </button>
+  </div>
 
   <select
     class="ns-select"
@@ -25,28 +48,8 @@
     {/each}
   </select>
 
-  {#if app.context}
-    <span class="cluster-pill">
-      <span class={`conn-dot ${app.clusterStatus}`}></span>
-      {#if app.serverVersion}
-        <span class="pill">{app.serverVersion}</span>
-      {/if}
-    </span>
-  {/if}
-
   <div class="spacer"></div>
 
-  <button
-    class="ghost"
-    onclick={() => (app.showApply = true)}
-    disabled={!app.context}
-    title="Apply YAML or JSON manifest to current cluster"
-  >
-    Apply
-  </button>
-  <button class="ghost" onclick={() => (app.showForwards = true)} title="Manage active local port forwards">
-    Forwards
-  </button>
   <button
     class="ghost icon"
     onclick={() => app.reload()}
@@ -98,41 +101,16 @@
     border-bottom: 1px solid var(--border);
     background: var(--panel);
   }
-  .logo {
-    border-radius: var(--radius);
-    object-fit: contain;
-    background: transparent;
-    display: block;
-    margin-right: var(--space-2);
-    user-select: none;
-    -webkit-user-select: none;
-    -webkit-user-drag: none;
+  .nav-btns {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
   }
   .ns-select {
     min-width: 184px;
     max-width: 280px;
     height: var(--control-h);
     margin-right: var(--space-2);
-  }
-  .cluster-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
-  .conn-dot {
-    width: var(--space-2);
-    height: var(--space-2);
-    border-radius: 999px;
-    background: var(--muted);
-  }
-  .conn-dot.connected {
-    background: var(--ok);
-  }
-  .conn-dot.slow {
-    background: var(--warn);
-  }
-  .conn-dot.disconnected {
-    background: var(--bad);
   }
   .topbar > button {
     height: var(--control-h);
