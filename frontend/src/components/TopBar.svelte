@@ -1,9 +1,11 @@
 <script lang="ts">
+  import { abbreviateKind } from "../lib/resources";
   import { app } from "../lib/store.svelte";
 
   const themeLabel: Record<string, string> = { system: "System", light: "Light", dark: "Dark" };
   const theme = $derived(themeLabel[app.settings.theme] ? app.settings.theme : "system");
   const nextTheme: Record<string, string> = { system: "Light", light: "Dark", dark: "System" };
+  const mainTabLabel = $derived(app.current ? abbreviateKind(app.current.kind) : "Resources");
 </script>
 
 <header class="topbar">
@@ -23,7 +25,48 @@
     {/each}
   </select>
 
-  <div class="spacer"></div>
+  {#if app.pageTabs.length > 0}
+    <div
+      class="tab-strip"
+      onwheel={(e) => {
+        if (e.deltaY && !e.deltaX && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) {
+          e.currentTarget.scrollLeft += e.deltaY;
+          e.preventDefault();
+        }
+      }}
+    >
+      <div class="tab" class:active={!app.activePageTab}>
+        <button
+          class="label"
+          onclick={() => app.activateMainTab()}
+          title={`Browse ${mainTabLabel}`}
+        >
+          <span class="tab-title">{mainTabLabel}</span>
+        </button>
+      </div>
+      {#each app.pageTabs as t (t.id)}
+        <div class="tab" class:active={app.activePageTab === t.id}>
+          <button
+            class="label"
+            onclick={() => app.activatePageTab(t.id)}
+            title={`${t.selection.type.kind}: ${t.selection.name}${t.selection.namespace ? ` (${t.selection.namespace})` : ""}`}
+          >
+            <span class="tab-title">{t.selection.name}</span>
+          </button>
+          <button
+            class="x"
+            onclick={() => app.closePageTab(t.id)}
+            title={`Close ${t.selection.name} tab`}
+            aria-label={`Close ${t.selection.name} tab`}
+          >
+            ✕
+          </button>
+        </div>
+      {/each}
+    </div>
+  {:else}
+    <div class="spacer"></div>
+  {/if}
 
   <div class="nav-btns">
     <button
@@ -117,5 +160,56 @@
   }
   .spacer {
     flex: 1;
+  }
+  .tab-strip {
+    display: flex;
+    align-items: stretch;
+    height: 100%;
+    flex: 1;
+    min-width: 0;
+    gap: var(--space-1);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tab-strip::-webkit-scrollbar {
+    display: none;
+  }
+  .tab {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    border-bottom: 2px solid transparent;
+    font-size: 12px;
+  }
+  .tab.active {
+    border-bottom-color: var(--accent);
+    color: var(--text-strong);
+  }
+  .label,
+  .x {
+    all: unset;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-2);
+    white-space: nowrap;
+  }
+  .label:focus-visible,
+  .x:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+  .tab-title {
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .x {
+    color: var(--muted);
+  }
+  .x:hover {
+    color: var(--text-strong);
   }
 </style>

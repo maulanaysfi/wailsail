@@ -15,6 +15,12 @@ import {
 } from "../src/lib/format.ts";
 import { groupResources } from "../src/lib/resources.ts";
 import {
+  closePageTabState,
+  navigatePageTab,
+  openOrFocusTab,
+  type PageTab,
+} from "../src/lib/tabs.ts";
+import {
   buildContainersList,
   buildControlledPodsPlan,
   buildSelectorEntries,
@@ -499,4 +505,45 @@ test("pushNavEntry tracks resource and object visits while deduplicating and tru
   assert.equal(nav.entries.length, 3);
   assert.equal(nav.index, 2);
   assert.equal(nav.entries[2].resourceKey, "/services");
+});
+
+test("page tab helpers open/deduplicate, navigate history, and close to adjacent tab", () => {
+  const podType = { group: "", version: "v1", resource: "pods", kind: "Pod", namespaced: true };
+  const depType = { group: "apps", version: "v1", resource: "deployments", kind: "Deployment", namespaced: true };
+  let seq = 0;
+  const makeId = () => `page-${++seq}`;
+
+  let tabs: PageTab[] = [];
+  let activeId: string | null = null;
+
+  const first = openOrFocusTab(tabs, { type: depType, namespace: "default", name: "web" }, makeId);
+  tabs = first.tabs;
+  activeId = first.activeId;
+  assert.equal(tabs.length, 1);
+  assert.equal(activeId, "page-1");
+
+  const dup = openOrFocusTab(tabs, { type: depType, namespace: "default", name: "web" }, makeId);
+  assert.equal(dup.tabs.length, 1);
+  assert.equal(dup.activeId, "page-1");
+
+  const second = openOrFocusTab(tabs, { type: podType, namespace: "default", name: "web-0" }, makeId);
+  tabs = second.tabs;
+  activeId = second.activeId;
+  assert.equal(tabs.length, 2);
+  assert.equal(activeId, "page-2");
+
+  tabs = navigatePageTab(tabs, "page-2", { type: depType, namespace: "default", name: "api" });
+  assert.equal(tabs[1].selection.name, "api");
+  assert.equal(tabs[1].nav.entries.length, 2);
+  assert.equal(tabs[1].nav.index, 1);
+
+  const closedSecond = closePageTabState(tabs, activeId, "page-2");
+  tabs = closedSecond.tabs;
+  activeId = closedSecond.activeId;
+  assert.equal(tabs.length, 1);
+  assert.equal(activeId, "page-1");
+
+  const closedFirst = closePageTabState(tabs, activeId, "page-1");
+  assert.equal(closedFirst.tabs.length, 0);
+  assert.equal(closedFirst.activeId, null);
 });

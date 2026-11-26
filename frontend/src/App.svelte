@@ -103,16 +103,21 @@
   <div class="workspace">
     <Sidebar />
     <div class="center">
-      <div class="upper">
-        {#if app.current}
-          <ResourceTable />
-        {:else if !app.resourcesLoading}
-          <p class="placeholder">
-            {app.connectionError ? `Disconnected from ${app.context || "cluster"}.` : "Select a context to browse resources."}
-          </p>
-        {/if}
-        {#if app.selection}
-          <DetailDrawer sel={app.selection} />
+      <div class="upper" class:full-page={!!app.activeTab}>
+        {#if app.activeTab}
+          {@const activeTab = app.activeTab}
+          <DetailDrawer sel={activeTab.selection} fullPage onClose={() => app.closePageTab(activeTab.id)} />
+        {:else}
+          {#if app.current}
+            <ResourceTable />
+          {:else if !app.resourcesLoading}
+            <p class="placeholder">
+              {app.connectionError ? `Disconnected from ${app.context || "cluster"}.` : "Select a context to browse resources."}
+            </p>
+          {/if}
+          {#if app.selection}
+            <DetailDrawer sel={app.selection} />
+          {/if}
         {/if}
       </div>
       {#if app.dock.length > 0}
@@ -291,6 +296,9 @@
     flex: 1;
     min-width: 0;
     min-height: 0;
+  }
+  .upper.full-page {
+    grid-template-columns: 1fr;
   }
   .placeholder {
     margin: auto;

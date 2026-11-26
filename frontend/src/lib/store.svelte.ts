@@ -11,12 +11,16 @@ import {
 import { toastTimeoutMs, type ToastTone } from "./format";
 import { pushNavEntry, type NavEntry, type NavState } from "./nav";
 import { kindKey, resourceKey } from "./resources";
+import {
+  closePageTabState,
+  navigatePageTab,
+  openOrFocusTab,
+  selectionKey,
+  type PageTab,
+  type Selection,
+} from "./tabs";
 
-export interface Selection {
-  type: ResourceType;
-  namespace: string;
-  name: string;
-}
+export type { PageTab, Selection } from "./tabs";
 
 export type DockStatus = "connecting" | "connected" | "disconnected";
 
@@ -81,6 +85,8 @@ class AppState {
   resourcesLoading = $state(false);
   current = $state<ResourceType | null>(null);
   selection = $state<Selection | null>(null);
+  pageTabs = $state<PageTab[]>([]);
+  activePageTab = $state<string | null>(null);
   dock = $state<DockTab[]>([]);
   dockStatuses = $state<Record<string, DockStatus>>({});
   activeDock = $state("");
@@ -99,13 +105,20 @@ class AppState {
   reconnectNonce = $state(0);
   now = $state(Date.now());
   #nav = $state<NavState>({ entries: [], index: -1 });
+  #pageTabSeq = 0;
+
+  get activeTab(): PageTab | null {
+    return this.activePageTab ? (this.pageTabs.find((t) => t.id === this.activePageTab) ?? null) : null;
+  }
 
   get canGoBack(): boolean {
-    return this.#nav.index > 0;
+    const nav = this.activeTab?.nav ?? this.#nav;
+    return nav.index > 0;
   }
 
   get canGoForward(): boolean {
-    return this.#nav.index >= 0 && this.#nav.index < this.#nav.entries.length - 1;
+    const nav = this.activeTab?.nav ?? this.#nav;
+    return nav.index >= 0 && nav.index < nav.entries.length - 1;
   }
 
   #toastSeq = 0;
@@ -158,7 +171,7 @@ class AppState {
 
   async selectContext(
     name: string,
-    opts?: { preserveResourceKey?: string; preserveSelection?: Selection | null },
+    opts?: { preserveResourceKey?: string; preserveSelection?: Selection | null; preserveTabs?: boolean },
   ) {
     const wantResKey = opts?.preserveResourceKey ?? (this.current ? resourceKey(this.current) : "");
     const wantSelection = opts?.preserveSelection !== undefined ? opts.preserveSelection : (this.context === name ? this.selection : null);
@@ -170,7 +183,11 @@ class AppState {
     this.resources = [];
     this.namespaces = [];
     this.serverVersion = "";
-    if (isSwitch) this.#nav = { entries: [], index: -1 };
+    if (isSwitch && !opts?.preserveTabs) {
+      this.#nav = { entries: [], index: -1 };
+      this.pageTabs = [];
+      this.activePageTab = null;
+    }
     this.#connToastDismissedText = "";
     this.#setConnectionError("");
     this.saveSettings({ lastContext: name });
@@ -343,8 +360,33 @@ class AppState {
     this.selection = { type: selType, namespace: entry.selection.namespace, name: entry.selection.name };
   }
 
+  #resolveTabSelection(entry: NavEntry): Selection | null {
+    if (!entry.selection) return null;
+    const selType = this.resources.find((r) => resourceKey(r) === entry.selection!.resourceKey);
+    if (!selType) return null;
+    if (selType.namespaced && this.namespace !== "" && this.namespace !== entry.selection.namespace) {
+      this.namespace = entry.selection.namespace;
+    }
+    return { type: selType, namespace: entry.selection.namespace, name: entry.selection.name };
+  }
+
+  #stepActiveTab(delta: -1 | 1) {
+    const tab = this.activeTab;
+    if (!tab) return;
+    const nextIdx = tab.nav.index + delta;
+    if (nextIdx < 0 || nextIdx >= tab.nav.entries.length) return;
+    const nextSel = this.#resolveTabSelection(tab.nav.entries[nextIdx]) ?? tab.selection;
+    this.pageTabs = this.pageTabs.map((t) =>
+      t.id === tab.id ? { ...t, selection: nextSel, nav: { ...t.nav, index: nextIdx } } : t,
+    );
+  }
+
   goBack() {
     if (!this.canGoBack) return;
+    if (this.activeTab) {
+      this.#stepActiveTab(-1);
+      return;
+    }
     const nextIdx = this.#nav.index - 1;
     this.#nav = { ...this.#nav, index: nextIdx };
     this.#applyNavEntry(this.#nav.entries[nextIdx]);
@@ -352,6 +394,10 @@ class AppState {
 
   goForward() {
     if (!this.canGoForward) return;
+    if (this.activeTab) {
+      this.#stepActiveTab(1);
+      return;
+    }
     const nextIdx = this.#nav.index + 1;
     this.#nav = { ...this.#nav, index: nextIdx };
     this.#applyNavEntry(this.#nav.entries[nextIdx]);
@@ -367,6 +413,7 @@ class AppState {
   selectResource(r: ResourceType) {
     this.current = r;
     this.selection = null;
+    this.activePageTab = null;
     this.#recordNav();
   }
 
@@ -377,6 +424,28 @@ class AppState {
 
   closeSelection() {
     this.selection = null;
+  }
+
+  openPageTab(sel: Selection) {
+    const next = openOrFocusTab(this.pageTabs, sel, () => `page-${++this.#pageTabSeq}`);
+    this.pageTabs = next.tabs;
+    this.activePageTab = next.activeId;
+  }
+
+  activateMainTab() {
+    this.activePageTab = null;
+  }
+
+  activatePageTab(id: string) {
+    if (this.pageTabs.some((t) => t.id === id)) {
+      this.activePageTab = id;
+    }
+  }
+
+  closePageTab(id: string) {
+    const next = closePageTabState(this.pageTabs, this.activePageTab, id);
+    this.pageTabs = next.tabs;
+    this.activePageTab = next.activeId;
   }
 
   jumpToResource(ref: { apiVersion?: string; kind: string; name: string } | undefined | null, namespace: string) {
@@ -394,8 +463,13 @@ class AppState {
     if (target.namespaced && this.namespace !== "" && this.namespace !== ns) {
       this.namespace = ns;
     }
+    const nextSel: Selection = { type: target, namespace: ns, name: ref.name };
+    if (this.activeTab) {
+      this.pageTabs = navigatePageTab(this.pageTabs, this.activeTab.id, nextSel);
+      return;
+    }
     this.current = target;
-    this.selection = { type: target, namespace: ns, name: ref.name };
+    this.selection = nextSel;
     this.#recordNav();
   }
 
@@ -494,7 +568,11 @@ class AppState {
       await this.selectContext(pick, {
         preserveResourceKey: prevResKey,
         preserveSelection: pick === prev ? prevSelection : null,
+        preserveTabs: pick === prev,
       });
+    } else {
+      this.pageTabs = [];
+      this.activePageTab = null;
     }
   }
 
@@ -650,6 +728,10 @@ class AppState {
 
   openEdit(sel: Selection) {
     this.editOnOpen = true;
+    if (this.activeTab) {
+      this.pageTabs = navigatePageTab(this.pageTabs, this.activeTab.id, sel);
+      return;
+    }
     this.selectObject({ ...sel });
   }
 
@@ -693,13 +775,14 @@ class AppState {
     try {
       await Kube.Delete(this.context, refOf(sel.type), sel.namespace, sel.name);
       this.toast(`${sel.type.kind} ${sel.name} ${pastVerb}`, "ok");
-      if (
-        this.selection &&
-        this.selection.name === sel.name &&
-        this.selection.namespace === sel.namespace &&
-        resourceKey(this.selection.type) === resourceKey(sel.type)
-      ) {
+      const deletedKey = selectionKey(sel);
+      if (this.selection && selectionKey(this.selection) === deletedKey) {
         this.selection = null;
+      }
+      for (const tab of this.pageTabs) {
+        if (selectionKey(tab.selection) === deletedKey) {
+          this.closePageTab(tab.id);
+        }
       }
       return true;
     } catch (e) {

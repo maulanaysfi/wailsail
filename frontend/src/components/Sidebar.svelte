@@ -77,7 +77,7 @@
   );
 
   function isActive(r: ResourceType) {
-    return app.current != null && resourceKey(app.current) === resourceKey(r);
+    return !app.activePageTab && app.current != null && resourceKey(app.current) === resourceKey(r);
   }
 </script>
 

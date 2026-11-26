@@ -36,7 +36,7 @@
   import RowContextMenu, { buildRowMenuItems } from "./RowContextMenu.svelte";
   import YamlEditor from "./YamlEditor.svelte";
 
-  let { sel }: { sel: Selection } = $props();
+  let { sel, fullPage = false, onClose }: { sel: Selection; fullPage?: boolean; onClose?: () => void } = $props();
 
   let tab = $state<"overview" | "yaml" | "manifest">("overview");
   let obj = $state<Record<string, any> | null>(null);
@@ -619,15 +619,23 @@
   </div>
 {/snippet}
 
-<aside class="drawer" style={`width:${width}px`}>
-  <div class="resizer" onpointerdown={startResize} role="separator" aria-orientation="vertical"></div>
+<aside class="drawer" class:full-page={fullPage} style={fullPage ? undefined : `width:${width}px`}>
+  {#if !fullPage}
+    <div class="resizer" onpointerdown={startResize} role="separator" aria-orientation="vertical"></div>
+  {/if}
   <header>
     <div class="title">
       <span class="kind">{sel.type.kind}</span>
       <strong>{sel.name}</strong>
       {#if sel.namespace}<span class="ns">{sel.namespace}</span>{/if}
     </div>
-    <button class="ghost close" onclick={() => app.closeSelection()} title="Close detail panel (Esc)">✕</button>
+    <button
+      class="ghost close"
+      onclick={() => (onClose ? onClose() : app.closeSelection())}
+      title={fullPage ? "Close tab" : "Close detail panel (Esc)"}
+    >
+      ✕
+    </button>
   </header>
 
   <div class="actions">
@@ -1387,6 +1395,10 @@
     min-width: 0;
     min-height: 0;
     overflow: hidden;
+  }
+  .drawer.full-page {
+    width: 100%;
+    border-left: 0;
   }
   .resizer {
     position: absolute;
