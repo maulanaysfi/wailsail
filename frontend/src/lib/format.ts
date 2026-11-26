@@ -356,3 +356,62 @@ export function toastTimeoutMs(text: string, tone: ToastTone = "info"): number {
   if (words <= 10) return base;
   return Math.min(18_000, base + (words - 10) * 250);
 }
+
+const logTimeFormatters = new Map<string, Intl.DateTimeFormat>();
+
+function getLogTimeFormatter(timeZone: string | undefined): Intl.DateTimeFormat {
+  const key = timeZone ?? "__local__";
+  let fmt = logTimeFormatters.get(key);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat("en-GB", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    });
+    logTimeFormatters.set(key, fmt);
+  }
+  return fmt;
+}
+
+/**
+ * Format a parsed Kubernetes log timestamp (`2026-...Z `) in the configured
+ * timezone ("local", "UTC", or IANA zone) as `YYYY-MM-DD HH:mm:ss` while
+ * preserving trailing separator whitespace.
+ */
+export function formatLogTimestamp(rawTs: string, timezone = "local"): string {
+  const m = /^(\S+)(\s*)$/.exec(rawTs);
+  if (!m) return rawTs;
+  const ms = Date.parse(m[1]);
+  if (Number.isNaN(ms)) return rawTs;
+  const tz = !timezone || timezone === "local" ? undefined : timezone;
+  try {
+    const parts: Record<string, string> = {};
+    for (const p of getLogTimeFormatter(tz).formatToParts(ms)) {
+      if (p.type !== "literal") parts[p.type] = p.value;
+    }
+    const hour = parts.hour === "24" ? "00" : parts.hour;
+    return `${parts.year}-${parts.month}-${parts.day} ${hour}:${parts.minute}:${parts.second}${m[2]}`;
+  } catch {
+    return rawTs;
+  }
+}
+
+/** Return selectable timezone options: Local (System), UTC, and supported IANA zones. */
+export function timezoneOptions(): Array<{ value: string; label: string }> {
+  const out: Array<{ value: string; label: string }> = [
+    { value: "local", label: "Local (System)" },
+    { value: "UTC", label: "UTC" },
+  ];
+  const intlAny = Intl as typeof Intl & { supportedValuesOf?: (key: string) => string[] };
+  if (typeof intlAny.supportedValuesOf === "function") {
+    for (const tz of intlAny.supportedValuesOf("timeZone")) {
+      if (tz !== "UTC") out.push({ value: tz, label: tz });
+    }
+  }
+  return out;
+}

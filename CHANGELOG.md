@@ -4,6 +4,15 @@ All notable changes to **`wailsail`** are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- **Log Timezone Setting (`settings`, `SettingsModal`, `LogViewer`)**: Added a persistent `Timezone` selector (`local` default, `UTC`, and IANA zones) converting Kubernetes log timestamps to `YYYY-MM-DD HH:mm:ss`.
+
+### Changed
+- **Undraggable App Logo (`TopBar`)**: Marked the top bar `/icon.png` logo non-draggable (`draggable="false"`, `-webkit-user-drag: none`, `user-select: none`).
+- **Port Forward Remote Port Input (`PortForwardModal`)**: Showed only the discovered ports dropdown when container/service ports exist, falling back to the numeric input only when no ports are declared (`ports.length === 0`).
+
 ## [0.2.1-beta] - 2026-11-26
 
 ### Added

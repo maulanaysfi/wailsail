@@ -7,7 +7,7 @@
 </script>
 
 <header class="topbar">
-  <img class="logo" src="/icon.png" alt="wailsail" width="24" height="24" />
+  <img class="logo" src="/icon.png" alt="wailsail" width="24" height="24" draggable="false" />
 
   <label class="field">
     <span>Context</span>
@@ -115,6 +115,9 @@
     background: transparent;
     display: block;
     margin-right: var(--space-2);
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-user-drag: none;
   }
   .field {
     display: flex;

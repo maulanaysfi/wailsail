@@ -59,6 +59,7 @@ const defaultSettings: SettingsData = {
   lastNamespace: {},
   logTailLines: 500,
   logTimestamps: false,
+  logTimezone: "local",
   pinned: [],
   columnOrders: {},
   columnWidths: {},

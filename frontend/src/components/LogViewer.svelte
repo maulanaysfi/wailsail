@@ -1,6 +1,7 @@
 <script lang="ts">
   import { tick, untrack } from "svelte";
   import { Kube, Logs, newStreamId, on, topics, errorMessage, type ContainerInfo, type LogEvent } from "../lib/api";
+  import { formatLogTimestamp } from "../lib/format";
   import { computeLogWindow, entryOffset, type LogEntryItem } from "../lib/logWindow.ts";
   import { app, type DockStatus } from "../lib/store.svelte";
 
@@ -412,7 +413,7 @@
   >
     {#if view.topPad > 0}<div aria-hidden="true" style={`height:${view.topPad}px`}></div>{/if}
     {#each view.items as entry (entry.id)}
-      <div class="line" data-id={entry.id}>{#if entry.pod}<span class="pod-prefix" style={`color:var(--log-pod-${entry.podColor})`}>{entry.pod}</span>{" "}{/if}{#if entry.ts}<span class="ts">{entry.ts}</span>{/if}{entry.body}</div>
+      <div class="line" data-id={entry.id}>{#if entry.pod}<span class="pod-prefix" style={`color:var(--log-pod-${entry.podColor})`}>{entry.pod}</span>{" "}{/if}{#if entry.ts}<span class="ts">{formatLogTimestamp(entry.ts, app.settings.logTimezone)}</span>{/if}{entry.body}</div>
     {/each}
     {#if view.bottomPad > 0}<div aria-hidden="true" style={`height:${view.bottomPad}px`}></div>{/if}
   </div>

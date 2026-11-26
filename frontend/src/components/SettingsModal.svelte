@@ -1,7 +1,10 @@
 <script lang="ts">
   import { Dialogs } from "@wailsio/runtime";
   import { errorMessage } from "../lib/api";
+  import { formatLogTimestamp, timezoneOptions } from "../lib/format";
   import { APP_VERSION, app, scaleOptions } from "../lib/store.svelte";
+
+  const timezones = timezoneOptions();
 
   let draft = $state("");
   let busy = $state(false);
@@ -103,6 +106,27 @@
             </button>
           {/each}
         </div>
+      </div>
+    </section>
+
+    <section>
+      <h4>Logs</h4>
+      <div class="row">
+        <span class="label">Timezone</span>
+        <select
+          class="tz-select"
+          aria-label="Log timestamp timezone"
+          value={app.settings.logTimezone || "local"}
+          onchange={(e) => app.saveSettings({ logTimezone: e.currentTarget.value })}
+        >
+          {#if app.settings.logTimezone && !timezones.some((z) => z.value === app.settings.logTimezone)}
+            <option value={app.settings.logTimezone}>{app.settings.logTimezone}</option>
+          {/if}
+          {#each timezones as tz (tz.value)}
+            <option value={tz.value}>{tz.label}</option>
+          {/each}
+        </select>
+        <span class="hint mono">{formatLogTimestamp(new Date(app.now).toISOString(), app.settings.logTimezone)}</span>
       </div>
     </section>
 
@@ -265,5 +289,11 @@
   }
   .grow {
     flex: 1;
+  }
+  .tz-select {
+    max-width: 240px;
+  }
+  .mono {
+    font-family: var(--mono);
   }
 </style>

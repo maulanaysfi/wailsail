@@ -6,8 +6,10 @@ import {
   buildResourceMeter,
   clearMeasureTextCache,
   decodeBase64Text,
+  formatLogTimestamp,
   maskSecretKey,
   measureTextWidth,
+  timezoneOptions,
   toastTimeoutMs,
   toneFor,
 } from "../src/lib/format.ts";
@@ -459,4 +461,17 @@ test("toastTimeoutMs scales timeouts conditionally above 10 words and caps at 18
 
   const huge = Array.from({ length: 80 }, () => "token").join(" ");
   assert.equal(toastTimeoutMs(huge, "error"), 18_000);
+});
+
+test("formatLogTimestamp converts RFC3339 timestamps to selected timezone as YYYY-MM-DD HH:mm:ss", () => {
+  assert.equal(formatLogTimestamp("2026-11-26T04:30:12.123456Z ", "UTC"), "2026-11-26 04:30:12 ");
+  assert.equal(formatLogTimestamp("2026-11-26T04:30:12.123456Z ", "Asia/Jakarta"), "2026-11-26 11:30:12 ");
+  assert.equal(formatLogTimestamp("2026-11-26T17:05:09Z", "UTC"), "2026-11-26 17:05:09");
+  assert.equal(formatLogTimestamp("2026-11-26T00:05:09Z ", "UTC"), "2026-11-26 00:05:09 ");
+  assert.equal(formatLogTimestamp("2026-11-26T04:30:12Z ", "Invalid/Zone"), "2026-11-26T04:30:12Z ");
+
+  const zones = timezoneOptions();
+  assert.equal(zones[0].value, "local");
+  assert.equal(zones[1].value, "UTC");
+  assert.ok(zones.some((z) => z.value === "Asia/Jakarta"));
 });
