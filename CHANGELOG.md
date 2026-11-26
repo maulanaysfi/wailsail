@@ -7,9 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Row Context Menu & Scale Modal (`ResourceTable`, `App.svelte`, `store.svelte.ts`)**: Added themed right-click action menus on resource rows with icons matching `DetailDrawer` (`Jump to Owner`, `Port forward`, `Scale`, `Restart`, `View logs`, `Exec shell`, `Edit YAML`/`Edit values`, `Delete`/`Uninstall`), plus a centered `Scale` modal supporting arrow keys and `Enter` to apply.
 - **Log Timezone Setting (`settings`, `SettingsModal`, `LogViewer`)**: Added a persistent `Timezone` selector (`local` default, `UTC`, and IANA zones) converting Kubernetes log timestamps to `YYYY-MM-DD HH:mm:ss`.
 
 ### Changed
+- **Double-Click `DetailDrawer` Toggle & Single-Click Focus (`ResourceTable`)**: Single-clicking a row highlights it as focused/active while double-clicking toggles `DetailDrawer`.
+- **Disable Pinch/Browser Zoom (`index.html`, `style.css`, `App.svelte`)**: Blocked trackpad pinch-to-zoom (`wheel` with `ctrlKey`/`metaKey`, `gesturestart`/`gesturechange`, `touch-action: pan-x pan-y`) and keyboard zoom shortcuts so viewport zoom stays controlled cleanly via `Settings -> Screen scale`.
 - **Undraggable App Logo (`TopBar`)**: Marked the top bar `/icon.png` logo non-draggable (`draggable="false"`, `-webkit-user-drag: none`, `user-select: none`).
 - **Port Forward Remote Port Input (`PortForwardModal`)**: Showed only the discovered ports dropdown when container/service ports exist, falling back to the numeric input only when no ports are declared (`ports.length === 0`).
 

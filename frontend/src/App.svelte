@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { fade } from "svelte/transition";
   import { cubicInOut } from "svelte/easing";
   import { app, type Toast } from "./lib/store.svelte";
@@ -13,6 +13,29 @@
   import SettingsModal from "./components/SettingsModal.svelte";
 
   let copiedToastId = $state(0);
+  let scaleInput: HTMLInputElement | undefined = $state();
+  let scaleValue = $state(1);
+  let scaleBusy = $state(false);
+
+  $effect(() => {
+    const target = app.scaleTarget;
+    if (!target) return;
+    scaleValue = target.replicas;
+    scaleBusy = false;
+    tick().then(() => {
+      scaleInput?.focus();
+      scaleInput?.select();
+    });
+  });
+
+  async function submitScale() {
+    const target = app.scaleTarget;
+    if (!target || scaleBusy) return;
+    scaleBusy = true;
+    const ok = await app.scaleResource(target.sel, scaleValue);
+    scaleBusy = false;
+    if (ok) app.scaleTarget = null;
+  }
 
   function toastFadeDuration(): number {
     if (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
@@ -35,11 +58,31 @@
 
   onMount(() => {
     app.init();
+    const blockPinchWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) e.preventDefault();
+    };
+    const blockGesture = (e: Event) => e.preventDefault();
+    const blockKeyZoom = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === "+" || e.key === "-" || e.key === "=" || e.key === "0")) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener("wheel", blockPinchWheel, { passive: false });
+    window.addEventListener("gesturestart", blockGesture, { passive: false });
+    window.addEventListener("gesturechange", blockGesture, { passive: false });
+    window.addEventListener("keydown", blockKeyZoom);
+    return () => {
+      window.removeEventListener("wheel", blockPinchWheel);
+      window.removeEventListener("gesturestart", blockGesture);
+      window.removeEventListener("gesturechange", blockGesture);
+      window.removeEventListener("keydown", blockKeyZoom);
+    };
   });
 
   function onKey(e: KeyboardEvent) {
     if (e.key === "Escape") {
       if (app.confirmRequest) app.answerConfirm(false);
+      else if (app.scaleTarget) app.scaleTarget = null;
       else if (app.showSettings) app.showSettings = false;
       else if (app.showApply) app.showApply = false;
       else if (app.showForwards || app.forwardTarget) {
@@ -86,6 +129,30 @@
   {/if}
   {#if app.showSettings}
     <SettingsModal />
+  {/if}
+
+  {#if app.scaleTarget}
+    <div class="backdrop" role="presentation" onclick={(e) => e.target === e.currentTarget && (app.scaleTarget = null)}>
+      <div class="modal scale-modal" role="dialog" aria-modal="true" aria-labelledby="scale-title">
+        <h3 id="scale-title">Scale {app.scaleTarget.sel.type.kind} {app.scaleTarget.sel.name}</h3>
+        <label class="scale-field">
+          <span>Replicas</span>
+          <input
+            bind:this={scaleInput}
+            type="number"
+            min="0"
+            bind:value={scaleValue}
+            onkeydown={(e) => e.key === "Enter" && submitScale()}
+          />
+        </label>
+        <div class="row">
+          <button onclick={() => (app.scaleTarget = null)} disabled={scaleBusy} title="Cancel scaling (Esc)">Cancel</button>
+          <button class="primary" onclick={submitScale} disabled={scaleBusy} title={`Set replicas to ${scaleValue ?? 0} (Enter)`}>
+            {scaleBusy ? "Scaling…" : "Set"}
+          </button>
+        </div>
+      </div>
+    </div>
   {/if}
 
   {#if app.confirmRequest}
@@ -210,10 +277,21 @@
     margin: auto;
     color: var(--muted);
   }
-  .confirm {
+  .confirm,
+  .scale-modal {
     min-width: 360px;
   }
-  .confirm .row {
+  .scale-field {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-top: var(--space-3);
+  }
+  .scale-field input {
+    width: 112px;
+  }
+  .confirm .row,
+  .scale-modal .row {
     display: flex;
     justify-content: flex-end;
     gap: var(--space-2);

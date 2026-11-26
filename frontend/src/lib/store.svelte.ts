@@ -92,6 +92,8 @@ class AppState {
   showSettings = $state(false);
   defaultKubeconfigPath = $state("");
   forwardTarget = $state<Selection | null>(null);
+  scaleTarget = $state<{ sel: Selection; replicas: number } | null>(null);
+  editOnOpen = $state(false);
   cancelYamlEdit: (() => void) | null = null;
   reconnectNonce = $state(0);
   now = $state(Date.now());
@@ -574,6 +576,65 @@ class AppState {
   answerConfirm(ok: boolean) {
     this.confirmRequest?.resolve(ok);
     this.confirmRequest = null;
+  }
+
+  openEdit(sel: Selection) {
+    this.editOnOpen = true;
+    this.selection = { ...sel };
+  }
+
+  async scaleResource(sel: Selection, n: number): Promise<boolean> {
+    if (!Number.isInteger(n) || n < 0) {
+      this.toast("Replicas must be a non-negative integer", "error");
+      return false;
+    }
+    try {
+      await Kube.Scale(this.context, refOf(sel.type), sel.namespace, sel.name, n);
+      this.toast(`Scaled ${sel.name} to ${n}`, "ok");
+      return true;
+    } catch (e) {
+      this.toast(errorMessage(e), "error");
+      return false;
+    }
+  }
+
+  async restartResource(sel: Selection): Promise<boolean> {
+    if (!(await this.confirm(`Restart ${sel.name}?`, "Pods will be replaced following the rollout strategy."))) {
+      return false;
+    }
+    try {
+      await Kube.Restart(this.context, refOf(sel.type), sel.namespace, sel.name);
+      this.toast(`Restart of ${sel.name} triggered`, "ok");
+      return true;
+    } catch (e) {
+      this.toast(errorMessage(e), "error");
+      return false;
+    }
+  }
+
+  async deleteResource(sel: Selection): Promise<boolean> {
+    const isHelm = sel.type.group === "helm.sh" && sel.type.resource === "releases";
+    const where = sel.namespace ? ` in namespace ${sel.namespace}` : "";
+    const verb = isHelm ? "Uninstall" : "Delete";
+    if (!(await this.confirm(`${verb} ${sel.type.kind}?`, `${sel.name}${where} will be ${verb.toLowerCase()}ed.`, true))) {
+      return false;
+    }
+    try {
+      await Kube.Delete(this.context, refOf(sel.type), sel.namespace, sel.name);
+      this.toast(`${sel.type.kind} ${sel.name} ${verb.toLowerCase()}ed`, "ok");
+      if (
+        this.selection &&
+        this.selection.name === sel.name &&
+        this.selection.namespace === sel.namespace &&
+        resourceKey(this.selection.type) === resourceKey(sel.type)
+      ) {
+        this.selection = null;
+      }
+      return true;
+    } catch (e) {
+      this.toast(errorMessage(e), "error");
+      return false;
+    }
   }
 }
 

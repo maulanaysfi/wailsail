@@ -133,6 +133,20 @@
   let loadedKey = "";
 
   $effect(() => {
+    if (!app.editOnOpen || loading) return;
+    if (error) {
+      untrack(() => (app.editOnOpen = false));
+      return;
+    }
+    if (isHelmRelease ? helmDetail : yaml) {
+      untrack(() => {
+        app.editOnOpen = false;
+        startEdit();
+      });
+    }
+  });
+
+  $effect(() => {
     app.reconnectNonce;
     if (error && !editing && !loading) {
       untrack(() => load());
@@ -225,16 +239,7 @@
   }
 
   async function remove() {
-    const where = sel.namespace ? ` in namespace ${sel.namespace}` : "";
-    const verb = isHelmRelease ? "Uninstall" : "Delete";
-    if (!(await app.confirm(`${verb} ${sel.type.kind}?`, `${sel.name}${where} will be ${verb.toLowerCase()}ed.`, true))) return;
-    try {
-      await Kube.Delete(app.context, refOf(sel.type), sel.namespace, sel.name);
-      app.toast(`${sel.type.kind} ${sel.name} ${verb.toLowerCase()}ed`, "ok");
-      app.selection = null;
-    } catch (e) {
-      app.toast(errorMessage(e), "error");
-    }
+    await app.deleteResource(sel);
   }
 
   async function rollbackHelm(rev: number) {
@@ -270,29 +275,19 @@
   }
 
   async function scale() {
-    const n = replicas;
-    if (n == null || !Number.isInteger(n) || n < 0) {
+    if (replicas == null) {
       app.toast("Replicas must be a non-negative integer", "error");
       return;
     }
-    try {
-      await Kube.Scale(app.context, refOf(sel.type), sel.namespace, sel.name, n);
-      app.toast(`Scaled ${sel.name} to ${n}`, "ok");
+    if (await app.scaleResource(sel, replicas)) {
       replicas = null;
       load();
-    } catch (e) {
-      app.toast(errorMessage(e), "error");
     }
   }
 
   async function restart() {
-    if (!(await app.confirm(`Restart ${sel.name}?`, "Pods will be replaced following the rollout strategy."))) return;
-    try {
-      await Kube.Restart(app.context, refOf(sel.type), sel.namespace, sel.name);
-      app.toast(`Restart of ${sel.name} triggered`, "ok");
+    if (await app.restartResource(sel)) {
       load();
-    } catch (e) {
-      app.toast(errorMessage(e), "error");
     }
   }
 
