@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.0-beta] - 2026-11-26
+
 ### Added
 - **Multi-Page Object Tabs (`TopBar`, `DetailDrawer`, `RowContextMenu`, `store.svelte.ts`, `tabs.ts`)**: Added `View in new tab` at the top of the row right-click menu opening `DetailDrawer` in full-page mode inside a `BottomDock`-style scrollable tab strip between `Namespace` and the top bar action buttons, labeling tabs as `<Kind>/<name>` with ellipsis truncation, deduplicating repeated opens, adding a red close-all `✕` button next to navigation controls when tabs are open, and redirecting `Jump to Owner` to matching already-open owner tabs.
 - **Top Bar History Navigation (`TopBar`, `store.svelte.ts`, `nav.ts`)**: Added `←` / `→` Back and Forward navigation buttons in `TopBar` stepping through visited resource types and opened objects (excluding namespace changes and drawer closes, disabled when at history bounds).
