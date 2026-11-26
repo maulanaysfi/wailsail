@@ -1,6 +1,7 @@
 <script lang="ts">
   import { abbreviateKind } from "../lib/resources";
   import { app } from "../lib/store.svelte";
+  import { formatPageTabTitle } from "../lib/tabs";
 
   const themeLabel: Record<string, string> = { system: "System", light: "Light", dark: "Dark" };
   const theme = $derived(themeLabel[app.settings.theme] ? app.settings.theme : "system");
@@ -49,9 +50,9 @@
           <button
             class="label"
             onclick={() => app.activatePageTab(t.id)}
-            title={`${t.selection.type.kind}: ${t.selection.name}${t.selection.namespace ? ` (${t.selection.namespace})` : ""}`}
+            title={`${formatPageTabTitle(t.selection)}${t.selection.namespace ? ` (${t.selection.namespace})` : ""}`}
           >
-            <span class="tab-title">{t.selection.name}</span>
+            <span class="tab-title">{formatPageTabTitle(t.selection)}</span>
           </button>
           <button
             class="x"

@@ -16,6 +16,8 @@ import {
 import { groupResources } from "../src/lib/resources.ts";
 import {
   closePageTabState,
+  findTabBySelection,
+  formatPageTabTitle,
   navigatePageTab,
   openOrFocusTab,
   type PageTab,
@@ -507,11 +509,15 @@ test("pushNavEntry tracks resource and object visits while deduplicating and tru
   assert.equal(nav.entries[2].resourceKey, "/services");
 });
 
-test("page tab helpers open/deduplicate, navigate history, and close to adjacent tab", () => {
+test("page tab helpers open/deduplicate, format prefix, find tabs, navigate history, and close to adjacent tab", () => {
   const podType = { group: "", version: "v1", resource: "pods", kind: "Pod", namespaced: true };
   const depType = { group: "apps", version: "v1", resource: "deployments", kind: "Deployment", namespaced: true };
+  const pvcType = { group: "", version: "v1", resource: "persistentvolumeclaims", kind: "PersistentVolumeClaim", namespaced: true };
   let seq = 0;
   const makeId = () => `page-${++seq}`;
+
+  assert.equal(formatPageTabTitle({ type: podType, namespace: "default", name: "web-0" }), "Pod/web-0");
+  assert.equal(formatPageTabTitle({ type: pvcType, namespace: "default", name: "data-vol" }), "PVC/data-vol");
 
   let tabs: PageTab[] = [];
   let activeId: string | null = null;
@@ -525,6 +531,8 @@ test("page tab helpers open/deduplicate, navigate history, and close to adjacent
   const dup = openOrFocusTab(tabs, { type: depType, namespace: "default", name: "web" }, makeId);
   assert.equal(dup.tabs.length, 1);
   assert.equal(dup.activeId, "page-1");
+  assert.equal(findTabBySelection(tabs, { type: depType, namespace: "default", name: "web" })?.id, "page-1");
+  assert.equal(findTabBySelection(tabs, { type: depType, namespace: "default", name: "other" }), undefined);
 
   const second = openOrFocusTab(tabs, { type: podType, namespace: "default", name: "web-0" }, makeId);
   tabs = second.tabs;

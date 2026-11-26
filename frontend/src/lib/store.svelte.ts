@@ -13,6 +13,7 @@ import { pushNavEntry, type NavEntry, type NavState } from "./nav";
 import { kindKey, resourceKey } from "./resources";
 import {
   closePageTabState,
+  findTabBySelection,
   navigatePageTab,
   openOrFocusTab,
   selectionKey,
@@ -448,8 +449,8 @@ class AppState {
     this.activePageTab = next.activeId;
   }
 
-  jumpToResource(ref: { apiVersion?: string; kind: string; name: string } | undefined | null, namespace: string) {
-    if (!ref?.kind || !ref?.name) return;
+  #resolveTarget(ref: { apiVersion?: string; kind: string; name: string } | undefined | null, namespace: string): Selection | null {
+    if (!ref?.kind || !ref?.name) return null;
     const parts = (ref.apiVersion ?? "").split("/");
     const group = parts.length > 1 ? parts[0] : "";
     const target =
@@ -457,24 +458,42 @@ class AppState {
       this.resources.find((r) => r.kind === ref.kind);
     if (!target) {
       this.toast(`Resource kind ${ref.kind} not found`, "error");
-      return;
+      return null;
     }
     const ns = target.namespaced ? namespace : "";
-    if (target.namespaced && this.namespace !== "" && this.namespace !== ns) {
-      this.namespace = ns;
+    return { type: target, namespace: ns, name: ref.name };
+  }
+
+  #navigateToSelection(sel: Selection) {
+    if (sel.type.namespaced && this.namespace !== "" && this.namespace !== sel.namespace) {
+      this.namespace = sel.namespace;
     }
-    const nextSel: Selection = { type: target, namespace: ns, name: ref.name };
     if (this.activeTab) {
-      this.pageTabs = navigatePageTab(this.pageTabs, this.activeTab.id, nextSel);
+      this.pageTabs = navigatePageTab(this.pageTabs, this.activeTab.id, sel);
       return;
     }
-    this.current = target;
-    this.selection = nextSel;
+    this.current = sel.type;
+    this.selection = sel;
     this.#recordNav();
   }
 
+  jumpToResource(ref: { apiVersion?: string; kind: string; name: string } | undefined | null, namespace: string) {
+    const sel = this.#resolveTarget(ref, namespace);
+    if (sel) this.#navigateToSelection(sel);
+  }
+
   jumpToOwner(owner: { apiVersion?: string; kind: string; name: string } | undefined | null, namespace: string) {
-    this.jumpToResource(owner, namespace);
+    const sel = this.#resolveTarget(owner, namespace);
+    if (!sel) return;
+    const existing = findTabBySelection(this.pageTabs, sel);
+    if (existing) {
+      if (sel.type.namespaced && this.namespace !== "" && this.namespace !== sel.namespace) {
+        this.namespace = sel.namespace;
+      }
+      this.activePageTab = existing.id;
+      return;
+    }
+    this.#navigateToSelection(sel);
   }
 
   isPinned(r: ResourceType) {

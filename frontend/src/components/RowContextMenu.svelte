@@ -33,7 +33,14 @@
     const kk = kindKey(type);
     const isPod = kk === "/Pod";
     const isHelm = kk === "helm.sh/Release";
-    const items: MenuItem[] = [];
+    const items: MenuItem[] = [
+      {
+        id: "newtab",
+        label: "View in new tab",
+        icon: "newtab",
+        run: () => app.openPageTab(sel),
+      },
+    ];
 
     if (kk === "/Pod" || kk === "apps/ReplicaSet" || kk === "batch/Job" || r.owner) {
       items.push({
@@ -99,13 +106,6 @@
           }),
       });
     }
-
-    items.push({
-      id: "newtab",
-      label: "View in new tab",
-      icon: "newtab",
-      run: () => app.openPageTab(sel),
-    });
 
     items.push({
       id: "edit",

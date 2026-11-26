@@ -1,5 +1,5 @@
 import { pushNavEntry, type NavEntry, type NavState } from "./nav.ts";
-import { resourceKey } from "./resources.ts";
+import { abbreviateKind, resourceKey } from "./resources.ts";
 import type { ResourceType } from "./api";
 
 export interface Selection {
@@ -19,6 +19,17 @@ export function selectionKey(sel: Selection): string {
   return `${resourceKey(sel.type)}\0${sel.namespace}\0${sel.name}`;
 }
 
+/** Format tab label with abbreviated resource kind prefix (e.g. Pod/web-0, PVC/data). */
+export function formatPageTabTitle(sel: Selection): string {
+  return `${abbreviateKind(sel.type.kind)}/${sel.name}`;
+}
+
+/** Find an existing opened tab currently showing the exact selection. */
+export function findTabBySelection(tabs: PageTab[], sel: Selection): PageTab | undefined {
+  const key = selectionKey(sel);
+  return tabs.find((t) => selectionKey(t.selection) === key);
+}
+
 /** Build a navigation history entry representing an opened object. */
 export function navEntryFromSelection(sel: Selection): NavEntry {
   const rk = resourceKey(sel.type);
@@ -34,8 +45,7 @@ export function openOrFocusTab(
   sel: Selection,
   makeId: () => string,
 ): { tabs: PageTab[]; activeId: string } {
-  const key = selectionKey(sel);
-  const existing = tabs.find((t) => selectionKey(t.selection) === key);
+  const existing = findTabBySelection(tabs, sel);
   if (existing) {
     return { tabs, activeId: existing.id };
   }
