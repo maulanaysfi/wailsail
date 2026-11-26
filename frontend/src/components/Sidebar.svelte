@@ -108,20 +108,6 @@
 {/snippet}
 
 <nav class="sidebar" class:resizing style={`width:${width}px`}>
-  <div class="ctx-wrap">
-    <label class="ctx-label" for="ctx-select">Context</label>
-    <select
-      id="ctx-select"
-      class="ctx-select"
-      value={app.context}
-      onchange={(e) => app.selectContext(e.currentTarget.value)}
-    >
-      {#if app.contexts.length === 0}<option value="">No contexts</option>{/if}
-      {#each app.contexts as c (c.name)}
-        <option value={c.name}>{c.name}</option>
-      {/each}
-    </select>
-  </div>
   <div class="search-wrap">
     <input class="search" placeholder="Find resource type…" bind:value={query} />
     {#if query}
@@ -194,25 +180,6 @@
     width: 6px;
     cursor: col-resize;
     z-index: 2;
-  }
-  .ctx-wrap {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    margin: var(--space-2) var(--space-2) 0;
-  }
-  .ctx-label {
-    padding: 0 var(--space-1);
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--muted);
-    font-weight: 600;
-  }
-  .ctx-select {
-    width: 100%;
-    min-width: 0;
-    height: var(--control-h);
   }
   .search-wrap {
     position: relative;

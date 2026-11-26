@@ -11,6 +11,7 @@
     type EventInfo,
     type HelmReleaseDetail,
     type ResourceRef,
+    type ResourceType,
     type Row,
     type WatchEvent,
   } from "../lib/api";
@@ -32,6 +33,7 @@
     unreadyWorkloadCells,
   } from "../lib/specs";
   import { kindKey, restartableKinds, scalableKinds } from "../lib/resources";
+  import RowContextMenu, { buildRowMenuItems } from "./RowContextMenu.svelte";
   import YamlEditor from "./YamlEditor.svelte";
 
   let { sel }: { sel: Selection } = $props();
@@ -177,6 +179,7 @@
       revealedVals = {};
       podPage = 0;
       focusedPodKey = "";
+      podMenu = null;
       revPage = 0;
       load();
     });
@@ -374,6 +377,26 @@
   let podError = $state("");
   let podPage = $state(0);
   let focusedPodKey = $state("");
+  let podMenu = $state<{ row: Row; x: number; y: number } | null>(null);
+
+  const podResourceType: ResourceType = $derived(
+    app.resources.find((x) => kindKey(x) === "/Pod") ?? {
+      group: "",
+      version: "v1",
+      resource: "pods",
+      kind: "Pod",
+      namespaced: true,
+      shortNames: ["po"],
+      verbs: [],
+    },
+  );
+
+  function openPodMenu(e: MouseEvent, p: Row) {
+    e.preventDefault();
+    focusedPodKey = p.key;
+    const z = cssZoom();
+    podMenu = { row: p, x: Math.round(e.clientX / z), y: Math.round(e.clientY / z) };
+  }
 
   const podsPlan = $derived.by(() => buildControlledPodsPlan(kk, obj, sel.namespace));
   const podsPlanKey = $derived(
@@ -753,7 +776,7 @@
   {#if error}<div class="banner error">{error}</div>{/if}
 
   {#if tab === "overview"}
-    <div class="overview">
+    <div class="overview" onscroll={() => (podMenu = null)}>
       {#if isHelmRelease}
         {#if loading && !helmDetail}
           <p class="empty">Loading…</p>
@@ -1250,6 +1273,7 @@
                         focusedPodKey = p.key;
                         app.jumpToResource({ kind: "Pod", name: p.name }, p.namespace);
                       }}
+                      oncontextmenu={(e) => openPodMenu(e, p)}
                     >
                       <td class="col-pod-name">
                         <span class="pod-name mono">{p.name}</span>
@@ -1267,6 +1291,14 @@
               </table>
             {/if}
           </section>
+          {#if podMenu}
+            <RowContextMenu
+              items={buildRowMenuItems(podResourceType, podMenu.row)}
+              x={podMenu.x}
+              y={podMenu.y}
+              onClose={() => (podMenu = null)}
+            />
+          {/if}
         {/if}
 
         <section class="section">
@@ -1818,6 +1850,7 @@
   }
   .pods-table .col-pod-name {
     min-width: 0;
+    padding-left: var(--space-2);
     padding-right: var(--space-3);
   }
   .pods-table .col-pod-ready {
@@ -1841,9 +1874,9 @@
     font-variant-numeric: tabular-nums;
   }
   .pods-table .col-pod-restarts {
-    width: 60px;
+    width: 66px;
     text-align: right;
-    padding-right: 0;
+    padding-right: var(--space-2);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
   }

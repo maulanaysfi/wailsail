@@ -132,6 +132,20 @@
 
     <section>
       <h4>Kubeconfig</h4>
+      <div class="row">
+        <label class="label" for="ctx-select">Context</label>
+        <select
+          id="ctx-select"
+          class="ctx-select"
+          value={app.context}
+          onchange={(e) => app.selectContext(e.currentTarget.value)}
+        >
+          {#if app.contexts.length === 0}<option value="">No contexts</option>{/if}
+          {#each app.contexts as c (c.name)}
+            <option value={c.name}>{c.name}</option>
+          {/each}
+        </select>
+      </div>
       <p class="hint">
         Files are merged in order; folders are scanned for kubeconfig files. <code>~</code> and environment variables are
         expanded. Entries in <code>$KUBECONFIG</code> are also loaded, after these.
@@ -290,6 +304,7 @@
   .grow {
     flex: 1;
   }
+  .ctx-select,
   .tz-select {
     max-width: 240px;
   }

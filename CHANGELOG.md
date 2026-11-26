@@ -12,6 +12,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Log Timezone Setting (`settings`, `SettingsModal`, `LogViewer`)**: Added a persistent `Timezone` selector (`local` default, `UTC`, and IANA zones) converting Kubernetes log timestamps to `YYYY-MM-DD HH:mm:ss`.
 
 ### Changed
+- **Controlled Pods Context Menu & Padding (`DetailDrawer`, `RowContextMenu`)**: Added right-click Pod actions matching `ResourceTable` (`Jump to Owner`, `Port forward`, `View logs`, `Exec shell`, `Edit YAML`, `Delete`) via a shared `RowContextMenu` component, and added `8px` outer horizontal padding to controlled `Pods` table rows.
+- **Context Selector in Settings (`SettingsModal`, `Sidebar`)**: Moved the cluster `Context` dropdown from `Sidebar` to the top of the `Kubeconfig` section in `Settings`.
 - **Top Bar Order & Borderless Select Carets (`TopBar`, `style.css`)**: Placed `Namespace` on the left and grouped `[←] [→] [Refresh] [Theme] [Settings]` on the right of `TopBar`, and hid native `<select>` dropdown arrows globally (`appearance: none`).
 - **Controlled Pods Selection & Clean Row Highlight (`DetailDrawer`, `ResourceTable`)**: Made controlled `Pods` table cells non-selectable matching the main table, and removed the left blue border line on focused rows (using clean `var(--selected)` row highlight).
 - **Controlled Pods Focus & Table Actions (`DetailDrawer`)**: Switched controlled `Pods` rows to single-click highlight and double-click open (keeping Pod names plain monospace text), and removed row `Logs`/`Shell` action buttons.
