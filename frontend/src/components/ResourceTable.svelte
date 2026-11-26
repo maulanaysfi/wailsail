@@ -58,11 +58,12 @@
   const isPod = $derived(curKindKey === "/Pod");
   const resScopeKey = $derived(app.current ? resourceKey(app.current) : "_");
 
-  // Start a watch whenever the context, resource type or namespace changes.
+  // Start a watch whenever the context, resource type, namespace or reconnect state changes.
   $effect(() => {
     const ctx = app.context;
     const r = app.current;
     const ns = r?.namespaced ? app.namespace : "";
+    app.reconnectNonce;
     if (!ctx || !r) return;
     untrack(() => {
       rows.clear();

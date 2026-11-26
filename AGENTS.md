@@ -42,7 +42,7 @@
 │   ├── bindings/           # Auto-generated Wails v3 TS bindings (do not hand-edit)
 │   └── src/
 │       ├── App.svelte
-│       ├── lib/            # api.ts, format.ts, logWindow.ts, resources.ts, specs.ts, store.svelte.ts, yamlHighlight.ts
+│       ├── lib/            # api.ts, crdSpecs.ts, format.ts, logWindow.ts, resources.ts, specs.ts, store.svelte.ts, yamlHighlight.ts
 │       └── components/     # TopBar, Sidebar, ResourceTable, DetailDrawer, YamlEditor, BottomDock, LogViewer, TerminalView, modals
 ├── build/                  # Wails v3 config.yml, icons, desktop/installer packaging templates
 ├── scripts/                # Build, test, validation, and SHA256SUMS release script (build.sh)
@@ -89,7 +89,7 @@ flowchart LR
   - `GetDetail(contextName string, ref ResourceRef, namespace, name string) (ObjectDetail, error)` — returns structured object, YAML without `managedFields`, neated YAML (`ObjectToNeatYAML`), related Kubernetes events, and live container CPU/memory usage (`ContainerMetrics` via `metrics.k8s.io/v1beta1`)
   - `PodMetrics(contextName, namespace string) (map[string]ContainerMetrics, error)` — returns live container CPU/memory usage for pods in a namespace (or all namespaces)
   - `Apply(contextName, manifest, defaultNamespace string) ([]ApplyResult, error)` — multi-document YAML/JSON + `List` expansion via Server-Side Apply (`fieldManager: "wailsail"`)
-  - `Update(contextName string, ref ResourceRef, namespace, name, manifest string) (ApplyResult, error)` — single-object Server-Side Apply for `DetailDrawer` YAML edits, rejecting immutable identity changes (`kind`, `apiVersion` group, `metadata.name`, `metadata.namespace`)
+  - `Update(contextName string, ref ResourceRef, namespace, name, manifest string) (ApplyResult, error)` — single-object full replacement (`PUT`, matching `kubectl edit` so deletions of foreign-managed fields such as `finalizers` or labels take effect) for `DetailDrawer` YAML edits, rejecting immutable identity changes (`kind`, `apiVersion` group, `metadata.name`, `metadata.namespace`)
   - `Delete(contextName string, ref ResourceRef, namespace, name string) error`
   - `Scale(contextName string, ref ResourceRef, namespace, name string, replicas int32) error`
   - `Restart(contextName string, ref ResourceRef, namespace, name string) error`

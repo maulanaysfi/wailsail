@@ -15,13 +15,13 @@ import {
   buildContainersList,
   buildControlledPodsPlan,
   buildSelectorEntries,
-  buildSelectorGroups,
   buildSpecRows,
   filterControlledPods,
   podSummaryColumns,
   unreadyWorkloadCells,
   workloadColumnIndices,
 } from "../src/lib/specs.ts";
+import { buildSelectorGroups } from "../src/lib/crdSpecs.ts";
 import { tokenizeYaml, tokenizeYamlLine } from "../src/lib/yamlHighlight.ts";
 import { computeLogWindow, entryOffset, type LogEntryItem } from "../src/lib/logWindow.ts";
 

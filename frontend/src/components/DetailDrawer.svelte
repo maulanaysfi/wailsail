@@ -22,10 +22,10 @@
     toneFor,
     type ResourceMeter,
   } from "../lib/format";
+  import { buildSelectorGroups } from "../lib/crdSpecs";
   import {
     buildContainersList,
     buildControlledPodsPlan,
-    buildSelectorGroups,
     buildSpecRows,
     filterControlledPods,
     podSummaryColumns,
@@ -133,6 +133,13 @@
   let loadedKey = "";
 
   $effect(() => {
+    app.reconnectNonce;
+    if (error && !editing && !loading) {
+      untrack(() => load());
+    }
+  });
+
+  $effect(() => {
     // Reload only when the selected object or active cluster actually changes.
     const key = `${app.context}\0${sel.type.group}\0${sel.type.resource}\0${sel.namespace}\0${sel.name}`;
     if (key === loadedKey) return;
@@ -161,6 +168,7 @@
   });
 
   function startEdit() {
+    if (!isHelmRelease && neat) neat = false;
     draft = activeYaml;
     editing = true;
     tab = "yaml";
@@ -385,6 +393,7 @@
   $effect(() => {
     const ctx = app.context;
     const planKey = podsPlanKey;
+    app.reconnectNonce;
     const plan = untrack(() => podsPlan);
     if (!ctx || !planKey || !plan || plan.emptyHint) {
       untrack(() => {

@@ -88,12 +88,14 @@ class AppState {
   defaultKubeconfigPath = $state("");
   forwardTarget = $state<Selection | null>(null);
   cancelYamlEdit: (() => void) | null = null;
+  reconnectNonce = $state(0);
   now = $state(Date.now());
 
   #toastSeq = 0;
   #lastReplyAt = 0;
   #unansweredSince = 0;
   #probing = false;
+  #hydrating = false;
   #ticks = 0;
   #saveChain = Promise.resolve();
   #savePending = false;
@@ -163,23 +165,7 @@ class AppState {
     this.#lastReplyAt = 0;
     this.#refreshClusterStatus();
     try {
-      const [version, resources, namespaces] = await Promise.all([
-        Kube.ServerVersion(name),
-        Kube.APIResources(name),
-        Kube.Namespaces(name),
-      ]);
-      if (this.context !== name) return; // switched meanwhile
-      this.#lastReplyAt = Date.now();
-      this.#unansweredSince = 0;
-      this.serverVersion = version;
-      this.resources = resources ?? [];
-      this.namespaces = namespaces ?? [];
-      const preserved = wantResKey ? this.resources.find((r) => resourceKey(r) === wantResKey) : undefined;
-      const pods = this.resources.find((r) => kindKey(r) === "/Pod");
-      this.current = preserved ?? pods ?? this.resources[0] ?? null;
-      if (wantSelection && this.current && resourceKey(wantSelection.type) === resourceKey(this.current)) {
-        this.selection = { ...wantSelection, type: this.current };
-      }
+      await this.#hydrateContext(name, wantResKey, wantSelection);
     } catch (e) {
       if (this.context === name) this.connectionError = errorMessage(e);
     } finally {
@@ -190,9 +176,43 @@ class AppState {
     }
   }
 
+  async #hydrateContext(name: string, wantResKey: string, wantSelection: Selection | null) {
+    if (this.#hydrating) return;
+    this.#hydrating = true;
+    try {
+      if (!this.namespace && !(this.settings.lastNamespace && name in this.settings.lastNamespace)) {
+        const defNs = (await Kube.DefaultNamespace(name).catch(() => "")) ?? "";
+        if (this.context !== name) return;
+        if (defNs) this.namespace = defNs;
+      }
+      const [version, resources, namespaces] = await Promise.all([
+        Kube.ServerVersion(name),
+        Kube.APIResources(name),
+        Kube.Namespaces(name),
+      ]);
+      if (this.context !== name) return; // switched meanwhile
+      this.#lastReplyAt = Date.now();
+      this.#unansweredSince = 0;
+      this.connectionError = "";
+      this.serverVersion = version;
+      this.resources = resources ?? [];
+      this.namespaces = namespaces ?? [];
+      const preserved = wantResKey ? this.resources.find((r) => resourceKey(r) === wantResKey) : undefined;
+      const pods = this.resources.find((r) => kindKey(r) === "/Pod");
+      this.current = preserved ?? pods ?? this.resources[0] ?? null;
+      if (wantSelection && this.current && resourceKey(wantSelection.type) === resourceKey(this.current)) {
+        this.selection = { ...wantSelection, type: this.current };
+      }
+    } finally {
+      this.#hydrating = false;
+    }
+  }
+
   #probeCluster() {
     const ctx = this.context;
-    if (!ctx || this.#probing || this.resourcesLoading) return;
+    if (!ctx || this.#probing || this.resourcesLoading || this.#hydrating) return;
+    const wasOffline = this.clusterStatus === "disconnected" || !!this.connectionError;
+    const needsHydration = this.resources.length === 0 || !this.current;
     this.#probing = true;
     if (this.#unansweredSince === 0) this.#unansweredSince = Date.now();
     Kube.ServerVersion(ctx)
@@ -202,6 +222,23 @@ class AppState {
         this.#unansweredSince = 0;
         if (v) this.serverVersion = v;
         this.connectionError = "";
+        if (needsHydration) {
+          const wantResKey = this.current ? resourceKey(this.current) : "";
+          void this.#hydrateContext(ctx, wantResKey, this.selection)
+            .catch(() => {})
+            .finally(() => this.#refreshClusterStatus());
+          return;
+        }
+        if (wasOffline) {
+          this.reconnectNonce++;
+          void Promise.all([Kube.APIResources(ctx), Kube.Namespaces(ctx)])
+            .then(([resources, namespaces]) => {
+              if (this.context !== ctx) return;
+              if (resources?.length) this.resources = resources;
+              if (namespaces) this.namespaces = namespaces;
+            })
+            .catch(() => {});
+        }
       })
       .catch(() => {
         // Keep #unansweredSince running so 5s -> yellow and 30s -> red transitions occur.

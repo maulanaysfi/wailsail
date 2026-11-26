@@ -257,7 +257,7 @@ func (c *Clients) runWatch(ctx context.Context, ref ResourceRef, namespace strin
 			return false
 		case <-time.After(backoff):
 		}
-		if backoff < 30*time.Second {
+		if backoff < 10*time.Second {
 			backoff *= 2
 		}
 		return true
