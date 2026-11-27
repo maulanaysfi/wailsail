@@ -796,12 +796,11 @@ func (s *Service) reconcileHelmManifest(c *Clients, namespace, oldManifest, newM
 		oldObjs, _ := DecodeManifest(oldManifest)
 		for i := len(oldObjs) - 1; i >= 0; i-- {
 			oldObj := oldObjs[i]
-			gvk := oldObj.GroupVersionKind()
-			ns := oldObj.GetNamespace()
-			if ns == "" {
-				ns = namespace
+			ref, err := resolveObjectRef(c, oldObj, namespace)
+			if err != nil {
+				continue
 			}
-			k := objectIdentityKey(gvk.Group, gvk.Kind, ns, oldObj.GetName())
+			k := objectIdentityKey(oldObj.GroupVersionKind().Group, ref.Kind, oldObj.GetNamespace(), oldObj.GetName())
 			if _, keep := newKeys[k]; !keep {
 				_ = s.deleteUnstructuredObject(c, namespace, oldObj)
 			}

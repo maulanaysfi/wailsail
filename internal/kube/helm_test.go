@@ -1,11 +1,18 @@
 package kube
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
+	k8stesting "k8s.io/client-go/testing"
 )
 
 func sampleHelmRelease(rev int, status string, replicas int) *helmRelease {
@@ -171,5 +178,76 @@ data:
 		if !strings.Contains(m, want) {
 			t.Fatalf("missing %q in:\n%s", want, m)
 		}
+	}
+}
+
+type resettableMapper struct {
+	meta.RESTMapper
+}
+
+func (resettableMapper) Reset() {}
+
+func newTestHelmClients() (*Clients, *dynamicfake.FakeDynamicClient) {
+	scheme := runtime.NewScheme()
+	dyn := dynamicfake.NewSimpleDynamicClient(scheme)
+	// FakeDynamicClient does not handle server-side apply patches by default.
+	dyn.PrependReactor("patch", "*", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		return true, &unstructured.Unstructured{}, nil
+	})
+	dm := meta.NewDefaultRESTMapper([]schema.GroupVersion{
+		{Group: "", Version: "v1"},
+		{Group: "rbac.authorization.k8s.io", Version: "v1"},
+	})
+	dm.Add(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}, meta.RESTScopeNamespace)
+	dm.Add(schema.GroupVersionKind{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "ClusterRole"}, meta.RESTScopeRoot)
+	return &Clients{
+		Dynamic:   dyn,
+		Mapper:    resettableMapper{dm},
+		DefaultNS: "default",
+	}, dyn
+}
+
+func TestReconcileHelmManifestKeepsClusterScopedResources(t *testing.T) {
+	c, dyn := newTestHelmClients()
+	svc := &Service{baseCtx: context.Background()}
+
+	oldManifest := `apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: webapp-role
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keep-cm
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: drop-cm
+`
+	newManifest := `apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: webapp-role
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keep-cm
+`
+
+	if err := svc.reconcileHelmManifest(c, "prod", oldManifest, newManifest); err != nil {
+		t.Fatalf("reconcileHelmManifest failed: %v", err)
+	}
+
+	var deleted []string
+	for _, a := range dyn.Actions() {
+		if da, ok := a.(k8stesting.DeleteAction); ok {
+			deleted = append(deleted, da.GetResource().Resource+"/"+da.GetNamespace()+"/"+da.GetName())
+		}
+	}
+	if len(deleted) != 1 || deleted[0] != "configmaps/prod/drop-cm" {
+		t.Fatalf("expected only configmaps/prod/drop-cm deleted, got %v", deleted)
 	}
 }
