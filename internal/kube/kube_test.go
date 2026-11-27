@@ -429,3 +429,56 @@ func TestUpdateObjectUsesPutAndPreservesResourceVersion(t *testing.T) {
 		t.Fatal("expected omitted finalizers not to be re-added")
 	}
 }
+
+func TestRunWatchRelistsOn410Gone(t *testing.T) {
+	listCalls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("watch") != "" {
+			if r.URL.Query().Get("resourceVersion") == "1" {
+				// Simulate 410 Gone watch expiry.
+				_, _ = w.Write([]byte(`{"type":"ERROR","object":{"kind":"Status","apiVersion":"v1","status":"Failure","reason":"Expired","code":410}}` + "\n"))
+				return
+			}
+			// Keep second watch open until client cancels.
+			<-r.Context().Done()
+			return
+		}
+		listCalls++
+		rv := "1"
+		name := "pod-a"
+		if listCalls >= 2 {
+			rv = "2"
+			name = "pod-b"
+		}
+		_, _ = w.Write([]byte(`{"kind":"Table","apiVersion":"meta.k8s.io/v1","metadata":{"resourceVersion":"` + rv + `"},"columnDefinitions":[{"name":"Name","type":"string"}],"rows":[{"cells":["` + name + `"],"object":{"metadata":{"uid":"` + name + `","name":"` + name + `","namespace":"default"}}}]}`))
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	c := &Clients{
+		Config: &rest.Config{Host: srv.URL},
+		HTTP:   srv.Client(),
+	}
+	ref := ResourceRef{Version: "v1", Resource: "pods", Kind: "Pod", Namespaced: true}
+	var lastName string
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		c.runWatch(ctx, ref, "default", watchOptions{}, func(ev WatchEvent) {
+			if ev.Reset && len(ev.Upserts) > 0 {
+				lastName = ev.Upserts[0].Name
+				if lastName == "pod-b" {
+					cancel()
+				}
+			}
+		})
+	}()
+	<-done
+
+	if listCalls != 2 || lastName != "pod-b" {
+		t.Fatalf("expected relist after 410 Gone (listCalls=2, pod-b), got listCalls=%d lastName=%q", listCalls, lastName)
+	}
+}

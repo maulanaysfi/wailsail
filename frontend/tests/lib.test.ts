@@ -2,18 +2,24 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   SECRET_VALUE_MASK,
+  age,
   buildConfigDataEntries,
   buildResourceMeter,
   clearMeasureTextCache,
+  compareCells,
   decodeBase64Text,
+  formatCPUMilli,
   formatLogTimestamp,
+  formatMemoryBytes,
   maskSecretKey,
   measureTextWidth,
+  parseCPUMilli,
+  parseMemoryBytes,
   timezoneOptions,
   toastTimeoutMs,
   toneFor,
 } from "../src/lib/format.ts";
-import { groupResources } from "../src/lib/resources.ts";
+import { abbreviateKind, groupResources, kindKey, resourceKey } from "../src/lib/resources.ts";
 import {
   closePageTabState,
   findTabBySelection,
@@ -554,4 +560,32 @@ test("page tab helpers open/deduplicate, format prefix, find tabs, navigate hist
   const closedFirst = closePageTabState(tabs, activeId, "page-1");
   assert.equal(closedFirst.tabs.length, 0);
   assert.equal(closedFirst.activeId, null);
+});
+
+test("format and resource helpers handle age, cell sorting, quantities, and abbreviations", () => {
+  const now = Date.parse("2026-11-26T12:00:00Z");
+  assert.equal(age("2026-11-26T11:59:15Z", now), "45s");
+  assert.equal(age("2026-11-26T11:48:00Z", now), "12m");
+  assert.equal(age("2026-11-26T09:00:00Z", now), "3h");
+  assert.equal(age("2026-11-21T12:00:00Z", now), "5d");
+  assert.equal(age("", now), "");
+
+  assert.ok(compareCells("2", "10") < 0);
+  assert.ok(compareCells("alpha", "beta") < 0);
+
+  assert.equal(parseCPUMilli("250m"), 250);
+  assert.equal(parseCPUMilli("2"), 2000);
+  assert.equal(parseCPUMilli("500000000n"), 500);
+  assert.equal(formatCPUMilli(250), "250m");
+  assert.equal(formatCPUMilli(1500), "1500m");
+  assert.equal(formatCPUMilli(2000), "2000m");
+
+  assert.equal(parseMemoryBytes("512Mi"), 512 * 1024 * 1024);
+  assert.equal(parseMemoryBytes("1G"), 1_000_000_000);
+  assert.equal(formatMemoryBytes(512 * 1024 * 1024), "512Mi");
+
+  assert.equal(abbreviateKind("PersistentVolumeClaim"), "PVC");
+  assert.equal(abbreviateKind("Pod"), "Pod");
+  assert.equal(resourceKey({ group: "apps", resource: "deployments" }), "apps/deployments");
+  assert.equal(kindKey({ group: "", kind: "Pod" }), "/Pod");
 });
