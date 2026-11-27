@@ -10,6 +10,7 @@ Update every file below before tagging a release. Note that Windows manifests an
 
 | File | Field / Line | Format Example | Notes |
 |---|---|---|---|
+| [version](version) | Single line | `0.1.2-beta` | Canonical source version read by `scripts/bump-version.sh` |
 | [frontend/src/lib/store.svelte.ts](frontend/src/lib/store.svelte.ts) | `APP_VERSION` | `"v0.1.2 (beta)"` | Shown as a pill in `SettingsModal` |
 | [build/config.yml](build/config.yml) | `info.version` | `"0.1.2-beta"` | Wails v3 project config |
 | [build/linux/nfpm/nfpm.yaml](build/linux/nfpm/nfpm.yaml) | `version` | `"0.1.2-beta"` | Linux `.deb` / `.rpm` / `.apk` package version |
@@ -30,13 +31,12 @@ Update every file below before tagging a release. Note that Windows manifests an
 
 ## 2. Release Checklist
 
-1. **Verify current version strings** (replace `0\.1\.2` with the outgoing version):
+1. **Bump all version placeholders** (reads current version from `version` and updates all files in Section 1):
    ```bash
-   grep -rn "0\.1\.2" --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=.git .
+   ./scripts/bump-version.sh X.Y.Z-beta
    ```
-2. **Update all version placeholders** listed in Section 1 to the target version (`X.Y.Z[-beta]`).
-3. **Update `CHANGELOG.md`**: Move `[Unreleased]` entries under `## [X.Y.Z-beta] - YYYY-MM-DD`.
-4. **Run validation, tests, build, and generate checksums via `scripts/build.sh`**:
+2. **Update `CHANGELOG.md`**: Move `[Unreleased]` entries under `## [X.Y.Z-beta] - YYYY-MM-DD`.
+3. **Run validation, tests, build, and generate checksums via `scripts/build.sh`**:
    - **Local / single-host release build**:
      ```bash
      ./scripts/build.sh --version vX.Y.Z-beta

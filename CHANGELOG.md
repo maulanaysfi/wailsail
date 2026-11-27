@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Version Bump Script (`version`, `scripts/bump-version.sh`)**: Stored the canonical version in `version` and added `scripts/bump-version.sh` to update all frontend and desktop packaging version placeholders in one command.
+
 ### Changed
 - **Author, Publisher, Maintainer & Copyright Metadata (`LICENSE`, `build/`)**: Updated author, publisher, maintainer, vendor, and copyright fields across `LICENSE` and desktop packaging metadata to `Maulana Yusuf`, and updated `frontend/.npmrc` to `min-release-age=7`.
 - **Build Assets & Embedded Static Footprint (`build/`, `Taskfile.yml`, `frontend/public/`)**: Removed unused Android, iOS, Docker, and stale macOS/Linux build assets and tasks (`-57` files / ~4.2 MB), subsetted `GoogleSansFlex` to Latin `WOFF2` (`3.8 MB` → `1.1 MB`, preserving variable axes and `tabular-nums`), and resized `frontend/public/icon.png` to a 64×64 favicon (`280 KB` → `7.2 KB`).

@@ -45,7 +45,8 @@
 │       ├── lib/            # api.ts, crdSpecs.ts, format.ts, logWindow.ts, nav.ts, resources.ts, specs.ts, store.svelte.ts, yamlHighlight.ts
 │       └── components/     # TopBar, Sidebar, ResourceTable, DetailDrawer, YamlEditor, BottomDock, LogViewer, TerminalView, modals
 ├── build/                  # Wails v3 config.yml, icons, desktop/installer packaging templates
-├── scripts/                # Build, test, validation, and SHA256SUMS release script (build.sh)
+├── scripts/                # Build/test/checksum (build.sh) and version bump (bump-version.sh) scripts
+├── version                 # Canonical current application version read by scripts/bump-version.sh
 └── bin/                    # Compiled binaries and staged dist artifacts (gitignored)
 ```
 
