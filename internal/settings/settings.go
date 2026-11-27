@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 )
 
@@ -59,18 +60,9 @@ func Defaults() Settings {
 	}
 }
 
-func validScale(v int) bool {
-	for _, s := range ValidScales {
-		if s == v {
-			return true
-		}
-	}
-	return false
-}
-
 // normalize fills missing or invalid fields with defaults.
 func (st *Settings) normalize() {
-	if !validScale(st.Scale) {
+	if !slices.Contains(ValidScales, st.Scale) {
 		st.Scale = DefaultScale
 	}
 	if st.LogTimezone == "" {

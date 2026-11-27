@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -162,14 +163,7 @@ func appendUnique(list []string, items ...string) []string {
 		if it == "" {
 			continue
 		}
-		dup := false
-		for _, have := range list {
-			if have == it {
-				dup = true
-				break
-			}
-		}
-		if !dup {
+		if !slices.Contains(list, it) {
 			list = append(list, it)
 		}
 	}

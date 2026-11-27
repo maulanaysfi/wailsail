@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -182,14 +183,7 @@ func (s *Service) APIResources(contextName string) ([]ResourceType, error) {
 
 func hasVerbs(have metav1.Verbs, want ...string) bool {
 	for _, w := range want {
-		found := false
-		for _, h := range have {
-			if h == w {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !slices.Contains(have, w) {
 			return false
 		}
 	}

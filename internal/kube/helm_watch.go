@@ -115,38 +115,11 @@ func (h *helmTracker) allLatestRows() []Row {
 // revision of each release into WatchEvents.
 func (c *Clients) runHelmWatch(ctx context.Context, namespace string, opts watchOptions, emit func(WatchEvent)) {
 	b := newBatcher()
-	done := make(chan struct{})
-	go func() {
-		t := time.NewTicker(flushInterval)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				close(done)
-				return
-			case <-t.C:
-				if ev, ok := b.take(); ok {
-					emit(ev)
-				}
-			}
-		}
-	}()
-	defer func() { <-done }()
+	defer startBatchFlusher(ctx, b, emit)()
 
 	tracker := newHelmTracker()
 	rv := ""
-	backoff := time.Second
-	sleep := func() bool {
-		select {
-		case <-ctx.Done():
-			return false
-		case <-time.After(backoff):
-		}
-		if backoff < 30*time.Second {
-			backoff *= 2
-		}
-		return true
-	}
+	sleep, resetBackoff := newWatchBackoff(ctx, 30*time.Second)
 
 	labelSel := "owner=helm"
 	if opts.labelSelector != "" {
@@ -175,7 +148,7 @@ func (c *Clients) runHelmWatch(ctx context.Context, namespace string, opts watch
 			}
 			rv = list.ResourceVersion
 			b.doReset(helmColumns, tracker.allLatestRows())
-			backoff = time.Second
+			resetBackoff()
 		}
 
 		timeout := int64(300)

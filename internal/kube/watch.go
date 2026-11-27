@@ -222,14 +222,7 @@ func (b *batcher) take() (WatchEvent, bool) {
 // flushInterval is how often batched watch events are delivered.
 const flushInterval = 150 * time.Millisecond
 
-// runWatch lists then watches a collection until ctx is cancelled, relisting
-// when the resourceVersion expires and backing off on errors.
-func (c *Clients) runWatch(ctx context.Context, ref ResourceRef, namespace string, opts watchOptions, emit func(WatchEvent)) {
-	if isHelmReleaseRef(ref) {
-		c.runHelmWatch(ctx, namespace, opts, emit)
-		return
-	}
-	b := newBatcher()
+func startBatchFlusher(ctx context.Context, b *batcher, emit func(WatchEvent)) func() {
 	done := make(chan struct{})
 	go func() {
 		t := time.NewTicker(flushInterval)
@@ -246,22 +239,39 @@ func (c *Clients) runWatch(ctx context.Context, ref ResourceRef, namespace strin
 			}
 		}
 	}()
-	defer func() { <-done }()
+	return func() { <-done }
+}
+
+func newWatchBackoff(ctx context.Context, maxDelay time.Duration) (sleep func() bool, reset func()) {
+	delay := time.Second
+	return func() bool {
+			select {
+			case <-ctx.Done():
+				return false
+			case <-time.After(delay):
+			}
+			if delay < maxDelay {
+				delay *= 2
+			}
+			return true
+		}, func() {
+			delay = time.Second
+		}
+}
+
+// runWatch lists then watches a collection until ctx is cancelled, relisting
+// when the resourceVersion expires and backing off on errors.
+func (c *Clients) runWatch(ctx context.Context, ref ResourceRef, namespace string, opts watchOptions, emit func(WatchEvent)) {
+	if isHelmReleaseRef(ref) {
+		c.runHelmWatch(ctx, namespace, opts, emit)
+		return
+	}
+	b := newBatcher()
+	defer startBatchFlusher(ctx, b, emit)()
 
 	var table *tableResult
 	rv := ""
-	backoff := time.Second
-	sleep := func() bool {
-		select {
-		case <-ctx.Done():
-			return false
-		case <-time.After(backoff):
-		}
-		if backoff < 10*time.Second {
-			backoff *= 2
-		}
-		return true
-	}
+	sleep, resetBackoff := newWatchBackoff(ctx, 10*time.Second)
 
 	for ctx.Err() == nil {
 		if rv == "" {
@@ -278,7 +288,7 @@ func (c *Clients) runWatch(ctx context.Context, ref ResourceRef, namespace strin
 			}
 			table, rv = t, t.ResourceVersion
 			b.doReset(t.Columns, t.Rows)
-			backoff = time.Second
+			resetBackoff()
 		}
 		newRV, err := c.watchTable(ctx, ref, namespace, rv, opts, table, b)
 		if ctx.Err() != nil {
