@@ -19,14 +19,6 @@ type ResourceRef struct {
 	Namespaced bool   `json:"namespaced"`
 }
 
-// GroupVersion returns "v1" or "group/version".
-func (r ResourceRef) GroupVersion() string {
-	if r.Group == "" {
-		return r.Version
-	}
-	return r.Group + "/" + r.Version
-}
-
 // Path builds the API path for a collection (name == "") or a single object.
 func (r ResourceRef) Path(namespace, name string) string {
 	var b strings.Builder
