@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Helm Cluster-Scoped Reconciliation (`internal/kube/helm.go`)**: Resolved old manifest objects via `resolveObjectRef` before pruning so cluster-scoped resources (`ClusterRole`, `CRD`, etc.) are not deleted during Helm upgrades or rollbacks.
+- **Helm Uninstall Error Handling (`internal/kube/helm.go`)**: Propagated manifest decode and resource delete errors (ignoring `NotFound` and missing CRD `NoMatchError`) before removing `sh.helm.release.v1` Secrets so failed uninstalls never erase release history.
+- **Rapid Context Switch Hydration Race (`frontend/src/lib/store.svelte.ts`)**: Replaced the boolean `#hydrating` guard with a monotonic `#hydrateSeq` counter so switching away from a slow/offline cluster hydrates the newly selected context instead of leaving the UI blank.
+- **Workload Logs `Follow: false` Termination & Reconnect (`internal/logs/aggregate.go`)**: Stopped `watchLoop` after the initial list when `Follow` is disabled so streams emit `Ended: true` cleanly, and automatically reconnected dropped or restarted container streams when `Follow` is enabled.
+- **Helm Tracker Memory Retention (`internal/kube/helm.go`)**: Stored lightweight `helmSummary` table rows indexed by release in `helmTracker` instead of retaining full decoded charts, templates, and manifests in RAM across all revisions.
+
 ## [0.3.0-beta] - 2026-11-26
 
 ### Added
