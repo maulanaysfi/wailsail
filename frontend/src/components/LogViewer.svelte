@@ -203,6 +203,7 @@
   });
 
   const view = $derived.by(() => {
+    version;
     measureVersion;
     return computeLogWindow(filtered, {
       wrap,

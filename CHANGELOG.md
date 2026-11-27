@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Expanded Unit Test Coverage (`internal/kube`, `internal/portforward`, `frontend/tests/lib.test.ts`)**: Added tests for `runWatch` `410 Gone` relisting, `portforward.resolveTarget`, and `format.ts`/`resources.ts` helpers.
 
 ### Fixed
+- **Log Viewer Initial Render Reactivity (`LogViewer.svelte`)**: Tracked `version` in the `view` `$derived` alongside memoized `filtered` entries so newly streamed or reloaded logs render immediately without waiting for a scroll event when no search filter is active.
 - **Helm Cluster-Scoped Reconciliation (`internal/kube/helm.go`)**: Resolved old manifest objects via `resolveObjectRef` before pruning so cluster-scoped resources (`ClusterRole`, `CRD`, etc.) are not deleted during Helm upgrades or rollbacks.
 - **Helm Uninstall Error Handling (`internal/kube/helm.go`)**: Propagated manifest decode and resource delete errors (ignoring `NotFound` and missing CRD `NoMatchError`) before removing `sh.helm.release.v1` Secrets so failed uninstalls never erase release history.
 - **Rapid Context Switch Hydration Race (`frontend/src/lib/store.svelte.ts`)**: Replaced the boolean `#hydrating` guard with a monotonic `#hydrateSeq` counter so switching away from a slow/offline cluster hydrates the newly selected context instead of leaving the UI blank.
