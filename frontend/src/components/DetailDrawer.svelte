@@ -20,10 +20,12 @@
     buildControlledPodsPlan,
     buildSpecRows,
   } from "../lib/specs";
-  import { kindKey, restartableKinds, scalableKinds } from "../lib/resources";
+  import { startPointerDrag } from "../lib/dom";
+  import { kindKey, ownerJumpKinds, restartableKinds, scalableKinds, workloadLogKinds } from "../lib/resources";
   import ConfigDataTable from "./ConfigDataTable.svelte";
   import ControlledPodsSection from "./ControlledPodsSection.svelte";
   import HelmReleaseOverview from "./HelmReleaseOverview.svelte";
+  import Icon from "./Icon.svelte";
   import YamlEditor from "./YamlEditor.svelte";
 
   let { sel, fullPage = false, onClose }: { sel: Selection; fullPage?: boolean; onClose?: () => void } = $props();
@@ -56,15 +58,8 @@
   const kk = $derived(kindKey(sel.type));
   const isPod = $derived(kk === "/Pod");
   const isHelmRelease = $derived(kk === "helm.sh/Release");
-  const canWorkloadLogs = $derived(
-    kk === "apps/Deployment" ||
-      kk === "apps/ReplicaSet" ||
-      kk === "apps/StatefulSet" ||
-      kk === "apps/DaemonSet" ||
-      kk === "batch/Job" ||
-      kk === "batch/CronJob",
-  );
-  const canJumpOwner = $derived(kk === "/Pod" || kk === "apps/ReplicaSet" || kk === "batch/Job");
+  const canWorkloadLogs = $derived(workloadLogKinds.has(kk));
+  const canJumpOwner = $derived(ownerJumpKinds.has(kk));
   const canForward = $derived(kk === "/Pod" || kk === "/Service");
   const canScale = $derived(scalableKinds.has(kk));
   const canRestart = $derived(restartableKinds.has(kk));
@@ -302,16 +297,10 @@
   }
 
   function startResize(e: PointerEvent) {
-    const z = cssZoom();
-    const startX = e.clientX;
     const startW = width;
-    const move = (ev: PointerEvent) => (width = Math.min(1100, Math.max(384, startW + (startX - ev.clientX) / z)));
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
+    startPointerDrag(e, (dx) => {
+      width = Math.min(1100, Math.max(384, startW - dx));
+    });
   }
 
   // Derived structured sections from `obj`.
@@ -497,19 +486,10 @@
     {:else}
       {#if isPod}
         <button class="icon" onclick={() => openDock("logs")} title={`Logs (${sel.name})`} aria-label="Logs">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-            <polyline points="14 2 14 8 20 8" />
-            <line x1="8" y1="13" x2="16" y2="13" />
-            <line x1="8" y1="17" x2="16" y2="17" />
-            <line x1="8" y1="9" x2="10" y2="9" />
-          </svg>
+          <Icon name="logs" />
         </button>
         <button class="icon" onclick={() => openDock("shell")} title={`Shell (${sel.name})`} aria-label="Shell">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <polyline points="4 17 10 11 4 5" />
-            <line x1="12" y1="19" x2="20" y2="19" />
-          </svg>
+          <Icon name="shell" />
         </button>
       {:else if canWorkloadLogs}
         <button
@@ -519,21 +499,11 @@
           title={`Aggregated logs (${sel.type.kind} ${sel.name})`}
           aria-label="Aggregated logs"
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-            <polyline points="14 2 14 8 20 8" />
-            <line x1="8" y1="13" x2="16" y2="13" />
-            <line x1="8" y1="17" x2="16" y2="17" />
-            <line x1="8" y1="9" x2="10" y2="9" />
-          </svg>
+          <Icon name="logs" />
         </button>
       {/if}
       <button class="icon" onclick={load} disabled={loading} title={`Refresh (${sel.type.kind} ${sel.name})`} aria-label="Refresh">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <polyline points="23 4 23 10 17 10" />
-          <polyline points="1 20 1 14 7 14" />
-          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-        </svg>
+        <Icon name="restart" />
       </button>
       <button
         class="icon"
@@ -542,12 +512,7 @@
         title={isHelmRelease ? `Edit values (${sel.name})` : `Edit YAML (${sel.type.kind} ${sel.name})`}
         aria-label={isHelmRelease ? "Edit values" : "Edit YAML"}
       >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7" />
-          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-          <line x1="8" y1="9" x2="11" y2="9" />
-          <line x1="8" y1="13" x2="10" y2="13" />
-        </svg>
+        <Icon name="edit" />
       </button>
       <button
         class="icon danger"
@@ -555,12 +520,7 @@
         title={`${isHelmRelease ? "Uninstall" : "Delete"} (${sel.type.kind} ${sel.name})`}
         aria-label={isHelmRelease ? "Uninstall" : "Delete"}
       >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <polyline points="3 6 5 6 21 6" />
-          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-          <line x1="10" y1="11" x2="10" y2="17" />
-          <line x1="14" y1="11" x2="14" y2="17" />
-        </svg>
+        <Icon name="delete" />
       </button>
     {/if}
   </div>
@@ -1004,7 +964,7 @@
     width: var(--control-h-sm);
     height: var(--control-h-sm);
   }
-  .actions button.icon svg {
+  .actions button.icon :global(svg) {
     width: 14px;
     height: 14px;
   }

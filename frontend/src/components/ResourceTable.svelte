@@ -11,6 +11,7 @@
     type Row,
     type WatchEvent,
   } from "../lib/api";
+  import { startPointerDrag } from "../lib/dom";
   import { app, cssZoom, refOf } from "../lib/store.svelte";
   import { age, buildResourceMeter, clearMeasureTextCache, compareCells, measureTextWidth, toneFor, type ResourceMeter } from "../lib/format";
   import { kindKey, resourceKey } from "../lib/resources";
@@ -292,30 +293,25 @@
     e.stopPropagation();
     e.preventDefault();
     const wk = widthKey(c);
-    const z = cssZoom();
-    const startX = e.clientX;
     const startW = colWidth(c);
     resizingKey = c.key;
-
-    const move = (ev: PointerEvent) => {
-      const next = Math.max(MIN_COL_W, Math.round(startW + (ev.clientX - startX) / z));
-      colWidths[wk] = next;
-    };
-    const up = () => {
-      resizingKey = "";
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      if (colWidths[wk] !== undefined) {
-        app.saveSettings({
-          columnWidths: {
-            ...(app.settings.columnWidths ?? {}),
-            [wk]: colWidths[wk],
-          },
-        });
-      }
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
+    startPointerDrag(
+      e,
+      (dx) => {
+        colWidths[wk] = Math.max(MIN_COL_W, Math.round(startW + dx));
+      },
+      () => {
+        resizingKey = "";
+        if (colWidths[wk] !== undefined) {
+          app.saveSettings({
+            columnWidths: {
+              ...(app.settings.columnWidths ?? {}),
+              [wk]: colWidths[wk],
+            },
+          });
+        }
+      },
+    );
   }
 
   function resetColWidth(e: MouseEvent, c: DisplayCol) {

@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { app, cssZoom } from "../lib/store.svelte";
+  import { horizontalWheelScroll, startPointerDrag } from "../lib/dom";
+  import { app } from "../lib/store.svelte";
+  import Icon from "./Icon.svelte";
   import LogViewer from "./LogViewer.svelte";
 
   let height = $state(320);
@@ -10,16 +12,10 @@
   }
 
   function startResize(e: PointerEvent) {
-    const z = cssZoom();
-    const startY = e.clientY;
     const startH = height;
-    const move = (ev: PointerEvent) => (height = Math.min(640, Math.max(160, startH + (startY - ev.clientY) / z)));
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
+    startPointerDrag(e, (_, dy) => {
+      height = Math.min(640, Math.max(160, startH - dy));
+    });
   }
 
   async function closeAll() {
@@ -38,15 +34,7 @@
 <section class="dock" class:minimized={!app.dockOpen} style={`height:${height}px`}>
   <div class="resizer" onpointerdown={startResize} role="separator" aria-orientation="horizontal"></div>
   <header class="dock-bar">
-    <div
-      class="tab-strip"
-      onwheel={(e) => {
-        if (e.deltaY && !e.deltaX && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) {
-          e.currentTarget.scrollLeft += e.deltaY;
-          e.preventDefault();
-        }
-      }}
-    >
+    <div class="tab-strip" onwheel={horizontalWheelScroll}>
       {#each app.dock as t (t.id)}
         {@const status = app.dockStatuses[t.id] ?? "connecting"}
         <div class="tab" class:active={app.activeDock === t.id}>
@@ -56,20 +44,7 @@
             title={`${t.kind === "logs" ? "Logs" : "Shell"} (${status}) for ${t.title}`}
           >
             <span class={`tab-icon ${status}`} aria-hidden="true">
-              {#if t.kind === "logs"}
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                  <polyline points="14 2 14 8 20 8" />
-                  <line x1="8" y1="13" x2="16" y2="13" />
-                  <line x1="8" y1="17" x2="16" y2="17" />
-                  <line x1="8" y1="9" x2="10" y2="9" />
-                </svg>
-              {:else}
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <polyline points="4 17 10 11 4 5" />
-                  <line x1="12" y1="19" x2="20" y2="19" />
-                </svg>
-              {/if}
+              <Icon name={t.kind === "logs" ? "logs" : "shell"} />
             </span>
             <span class="tab-title">{t.title}</span>
           </button>
@@ -183,7 +158,7 @@
     justify-content: center;
     color: var(--warn);
   }
-  .tab-icon svg {
+  .tab-icon :global(svg) {
     width: 14px;
     height: 14px;
   }

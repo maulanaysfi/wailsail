@@ -1,7 +1,9 @@
 <script lang="ts">
+  import { horizontalWheelScroll } from "../lib/dom";
   import { abbreviateKind } from "../lib/resources";
   import { app } from "../lib/store.svelte";
   import { formatPageTabTitle } from "../lib/tabs";
+  import Icon from "./Icon.svelte";
 
   const themeLabel: Record<string, string> = { system: "System", light: "Light", dark: "Dark" };
   const theme = $derived(themeLabel[app.settings.theme] ? app.settings.theme : "system");
@@ -27,15 +29,7 @@
   </select>
 
   {#if app.pageTabs.length > 0}
-    <div
-      class="tab-strip"
-      onwheel={(e) => {
-        if (e.deltaY && !e.deltaX && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) {
-          e.currentTarget.scrollLeft += e.deltaY;
-          e.preventDefault();
-        }
-      }}
-    >
+    <div class="tab-strip" onwheel={horizontalWheelScroll}>
       <div class="tab" class:active={!app.activePageTab}>
         <button
           class="label"
@@ -114,11 +108,7 @@
     title="Reload kubeconfig and refresh current resource view"
     aria-label="Reload"
   >
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <polyline points="23 4 23 10 17 10" />
-      <polyline points="1 20 1 14 7 14" />
-      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-    </svg>
+    <Icon name="restart" />
   </button>
 
   <button

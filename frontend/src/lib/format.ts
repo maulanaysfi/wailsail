@@ -1,3 +1,5 @@
+import { cssZoom } from "./dom.ts";
+
 /** Compact age like "45s", "12m", "3h", "5d", "2y". */
 export function age(created: string, now: number): string {
   if (!created) return "";
@@ -239,9 +241,7 @@ export function measureTextWidth(text: string, font: string, tabular = false): n
     // Set after `style.font` because the CSS `font` shorthand resets font-variant-numeric.
     measureSpan.style.fontVariantNumeric = "tabular-nums";
     measureSpan.textContent = text;
-    const rawZoom = parseFloat(document.documentElement.style.zoom || "");
-    const zoom = Number.isFinite(rawZoom) && rawZoom > 0 ? rawZoom : 1;
-    width = Math.ceil(measureSpan.getBoundingClientRect().width / zoom);
+    width = Math.ceil(measureSpan.getBoundingClientRect().width / cssZoom());
   } else {
     if (measureCtx === undefined && typeof document !== "undefined") {
       measureCtx = document.createElement("canvas").getContext("2d");

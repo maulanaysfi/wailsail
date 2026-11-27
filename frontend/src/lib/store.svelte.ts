@@ -827,8 +827,4 @@ export function refOf(r: ResourceType): ResourceRef {
   return { group: r.group, version: r.version, resource: r.resource, kind: r.kind, namespaced: r.namespaced };
 }
 
-/** Active CSS zoom multiplier (1 when native webview zoom is used). */
-export function cssZoom(): number {
-  const z = parseFloat(document.documentElement.style.zoom || "");
-  return Number.isFinite(z) && z > 0 ? z : 1;
-}
+export { cssZoom } from "./dom";
