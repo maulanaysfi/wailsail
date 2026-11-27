@@ -196,15 +196,15 @@
     };
   });
 
-  function filteredEntries(): LogEntryItem[] {
+  const filtered = $derived.by<LogEntryItem[]>(() => {
+    version;
     const q = search.trim().toLowerCase();
     return q ? entries.filter((e) => e.lower.includes(q)) : entries;
-  }
+  });
 
   const view = $derived.by(() => {
-    version;
     measureVersion;
-    return computeLogWindow(filteredEntries(), {
+    return computeLogWindow(filtered, {
       wrap,
       stickBottom,
       scrollTop,
@@ -256,7 +256,7 @@
       return;
     }
     if (captured) {
-      const offset = entryOffset(filteredEntries(), captured.id, wrap, measuredHeights, viewportW);
+      const offset = entryOffset(filtered, captured.id, wrap, measuredHeights, viewportW);
       if (offset >= 0) applyDomScrollTop(Math.max(0, offset - captured.relTop));
     }
   }

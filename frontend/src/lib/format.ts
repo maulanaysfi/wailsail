@@ -381,27 +381,42 @@ function getLogTimeFormatter(timeZone: string | undefined): Intl.DateTimeFormat 
   return fmt;
 }
 
+const logTimestampCache = new Map<string, string>();
+const MAX_LOG_TS_CACHE = 2000;
+
 /**
  * Format a parsed Kubernetes log timestamp (`2026-...Z `) in the configured
  * timezone ("local", "UTC", or IANA zone) as `YYYY-MM-DD HH:mm:ss` while
  * preserving trailing separator whitespace.
  */
 export function formatLogTimestamp(rawTs: string, timezone = "local"): string {
+  const tzKey = !timezone || timezone === "local" ? "" : timezone;
+  const cacheKey = `${tzKey}\0${rawTs}`;
+  const cached = logTimestampCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
   const m = /^(\S+)(\s*)$/.exec(rawTs);
   if (!m) return rawTs;
   const ms = Date.parse(m[1]);
   if (Number.isNaN(ms)) return rawTs;
-  const tz = !timezone || timezone === "local" ? undefined : timezone;
+  const tz = tzKey || undefined;
+  let out = rawTs;
   try {
     const parts: Record<string, string> = {};
     for (const p of getLogTimeFormatter(tz).formatToParts(ms)) {
       if (p.type !== "literal") parts[p.type] = p.value;
     }
     const hour = parts.hour === "24" ? "00" : parts.hour;
-    return `${parts.year}-${parts.month}-${parts.day} ${hour}:${parts.minute}:${parts.second}${m[2]}`;
+    out = `${parts.year}-${parts.month}-${parts.day} ${hour}:${parts.minute}:${parts.second}${m[2]}`;
   } catch {
-    return rawTs;
+    out = rawTs;
   }
+  if (logTimestampCache.size >= MAX_LOG_TS_CACHE) {
+    const oldest = logTimestampCache.keys().next().value;
+    if (oldest !== undefined) logTimestampCache.delete(oldest);
+  }
+  logTimestampCache.set(cacheKey, out);
+  return out;
 }
 
 /** Return selectable timezone options: Local (System), UTC, and supported IANA zones. */
