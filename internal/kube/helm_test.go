@@ -6,12 +6,14 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
+	k8sfake "k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 )
 
@@ -249,5 +251,43 @@ metadata:
 	}
 	if len(deleted) != 1 || deleted[0] != "configmaps/prod/drop-cm" {
 		t.Fatalf("expected only configmaps/prod/drop-cm deleted, got %v", deleted)
+	}
+}
+
+func TestUninstallHelmReleasePreservesSecretsOnDeleteError(t *testing.T) {
+	c, dyn := newTestHelmClients()
+	rel := sampleHelmRelease(1, "deployed", 1)
+	rel.Manifest = `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: protected-cm
+`
+	raw, err := encodeHelmReleaseData(rel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sec := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      helmSecretName("webapp", 1),
+			Namespace: "prod",
+			Labels:    map[string]string{"owner": "helm", "name": "webapp"},
+		},
+		Type: "helm.sh/release.v1",
+		Data: map[string][]byte{"release": raw},
+	}
+	c.Typed = k8sfake.NewSimpleClientset(sec)
+	dyn.PrependReactor("delete", "configmaps", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, apierrors.NewForbidden(schema.GroupResource{Resource: "configmaps"}, "protected-cm", nil)
+	})
+
+	svc := &Service{baseCtx: context.Background()}
+	err = svc.uninstallHelmRelease(c, "prod", "webapp")
+	if err == nil || !strings.Contains(err.Error(), "forbidden") {
+		t.Fatalf("expected forbidden delete error, got %v", err)
+	}
+
+	got, getErr := c.Typed.CoreV1().Secrets("prod").Get(context.Background(), sec.Name, metav1.GetOptions{})
+	if getErr != nil || got == nil {
+		t.Fatalf("expected release Secret to be preserved on delete failure, got err=%v", getErr)
 	}
 }

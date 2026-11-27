@@ -19,6 +19,7 @@ import (
 	sprig "github.com/Masterminds/sprig/v3"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -740,6 +741,10 @@ func (s *Service) UninstallHelmRelease(contextName, namespace, name string) erro
 	if err != nil {
 		return err
 	}
+	return s.uninstallHelmRelease(c, namespace, name)
+}
+
+func (s *Service) uninstallHelmRelease(c *Clients, namespace, name string) error {
 	records, err := s.listHelmReleaseRecords(s.baseCtx, c, namespace, name)
 	if err != nil {
 		return err
@@ -760,9 +765,18 @@ func (s *Service) UninstallHelmRelease(contextName, namespace, name string) erro
 	}
 
 	if strings.TrimSpace(active.Manifest) != "" {
-		objs, _ := DecodeManifest(active.Manifest)
+		objs, err := DecodeManifest(active.Manifest)
+		if err != nil {
+			return fmt.Errorf("decode release manifest: %w", err)
+		}
+		var delErrs []error
 		for i := len(objs) - 1; i >= 0; i-- {
-			_ = s.deleteUnstructuredObject(c, namespace, objs[i])
+			if err := s.deleteUnstructuredObject(c, namespace, objs[i]); err != nil {
+				delErrs = append(delErrs, fmt.Errorf("delete %s %s: %w", objs[i].GetKind(), objs[i].GetName(), err))
+			}
+		}
+		if len(delErrs) > 0 {
+			return errors.Join(delErrs...)
 		}
 	}
 
@@ -814,30 +828,14 @@ func objectIdentityKey(group, kind, namespace, name string) string {
 }
 
 func (s *Service) deleteUnstructuredObject(c *Clients, defaultNamespace string, obj *unstructured.Unstructured) error {
-	gvk := obj.GroupVersionKind()
-	mapping, err := c.Mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
+	ref, err := resolveObjectRef(c, obj, defaultNamespace)
 	if err != nil {
-		c.Mapper.Reset()
-		if mapping, err = c.Mapper.RESTMapping(gvk.GroupKind(), gvk.Version); err != nil {
-			return err
+		if meta.IsNoMatchError(err) {
+			return nil
 		}
+		return err
 	}
-	namespaced := mapping.Scope.Name() == "namespace"
-	ns := obj.GetNamespace()
-	if namespaced && ns == "" {
-		ns = defaultNamespace
-	}
-	if !namespaced {
-		ns = ""
-	}
-	ref := ResourceRef{
-		Group:      mapping.Resource.Group,
-		Version:    mapping.Resource.Version,
-		Resource:   mapping.Resource.Resource,
-		Kind:       gvk.Kind,
-		Namespaced: namespaced,
-	}
-	err = s.resourceClient(c, ref, ns).Delete(s.baseCtx, obj.GetName(), metav1.DeleteOptions{})
+	err = s.resourceClient(c, ref, obj.GetNamespace()).Delete(s.baseCtx, obj.GetName(), metav1.DeleteOptions{})
 	if apierrors.IsNotFound(err) {
 		return nil
 	}
