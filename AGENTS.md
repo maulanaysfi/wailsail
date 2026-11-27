@@ -13,7 +13,7 @@
   - Container logs: `wailsail:logs:<id>`
   - Exec TTY sessions: `wailsail:exec:<id>`
   - Port-forward list updates: `wailsail:portforwards`
-- **Icons & build metadata.** Keep root `icon.png` as the canonical source icon; sync changes to `build/appicon.png`, `build/ios/icon.png`, and `frontend/public/icon.png`, and regenerate platform icons via `wails3 task common:generate:icons`.
+- **Icons & build metadata.** Keep root `icon.png` as the canonical source icon; sync changes to `build/appicon.png` and `frontend/public/icon.png` (64×64 favicon), and regenerate platform icons via `wails3 task common:generate:icons`.
 - **Verification & Build.** Use `./scripts/build.sh` as the standard validate, test, build, and checksum pipeline (`./scripts/build.sh --test-only` for fast validation/tests without packaging, or `./scripts/build.sh` for full build + `SHA256SUMS`). Keep it green; let visual inspection be performed manually by dev/user.
 
 ---

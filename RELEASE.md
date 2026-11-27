@@ -16,8 +16,6 @@ Update every file below before tagging a release. Note that Windows manifests an
 | [build/darwin/Info.plist](build/darwin/Info.plist) | `CFBundleShortVersionString` | `0.1.2-beta` | macOS display version |
 | [build/darwin/Info.plist](build/darwin/Info.plist) | `CFBundleVersion` | `0.1.2` | macOS numeric build version (no suffix) |
 | [build/darwin/Info.dev.plist](build/darwin/Info.dev.plist) | `CFBundleShortVersionString` / `CFBundleVersion` | `0.1.2-beta` / `0.1.2` | macOS dev bundle versions |
-| [build/ios/Info.plist](build/ios/Info.plist) | `CFBundleShortVersionString` / `CFBundleVersion` | `0.1.2` / `0.1.2` | iOS bundle versions (numeric) |
-| [build/ios/Info.dev.plist](build/ios/Info.dev.plist) | `CFBundleShortVersionString` / `CFBundleVersion` | `0.1.2-dev` / `0.1.2` | iOS dev bundle versions |
 | [build/windows/info.json](build/windows/info.json) | `fixed.file_version` | `"0.1.2"` | Windows PE file version (numeric) |
 | [build/windows/info.json](build/windows/info.json) | `info.0409.ProductVersion` | `"0.1.2-beta"` | Windows Explorer product version |
 | [build/windows/wails.exe.manifest](build/windows/wails.exe.manifest) | `assemblyIdentity[@version]` | `"0.1.2"` | Windows SxS manifest (numeric) |
@@ -26,7 +24,7 @@ Update every file below before tagging a release. Note that Windows manifests an
 | [build/windows/msix/template.xml](build/windows/msix/template.xml) | `PackageInformation[@Version]` | `"0.1.2.0"` | MSIX template 4-part numeric version |
 | [CHANGELOG.md](CHANGELOG.md) | Release heading | `## [0.1.2-beta] - YYYY-MM-DD` | Release notes |
 
-> **Warning:** Do not run `wails3 task common:update:build-assets` blindly without checking `git diff build/` afterward—Wails asset templates can overwrite custom fields in `build/darwin/`, `build/ios/`, `build/linux/`, and `build/windows/`.
+> **Warning:** Do not run `wails3 task common:update:build-assets` blindly without checking `git diff build/` afterward—Wails asset templates can overwrite custom fields in `build/darwin/`, `build/linux/`, and `build/windows/`.
 
 ---
 
