@@ -215,7 +215,7 @@ export function buildResourceMeter(
 let measureCtx: CanvasRenderingContext2D | null | undefined;
 let measureSpan: HTMLSpanElement | null | undefined;
 const measureCache = new Map<string, number>();
-const MAX_MEASURE_CACHE = 500;
+const MAX_MEASURE_CACHE = 2000;
 
 /** Clear cached text measurements (e.g. once web fonts finish loading). */
 export function clearMeasureTextCache(): void {
@@ -253,7 +253,10 @@ export function measureTextWidth(text: string, font: string, tabular = false): n
       width = text.length * 8;
     }
   }
-  if (measureCache.size >= MAX_MEASURE_CACHE) measureCache.clear();
+  if (measureCache.size >= MAX_MEASURE_CACHE) {
+    const oldest = measureCache.keys().next().value;
+    if (oldest !== undefined) measureCache.delete(oldest);
+  }
   measureCache.set(key, width);
   return width;
 }

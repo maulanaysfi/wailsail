@@ -13,7 +13,17 @@
   } from "../lib/api";
   import { startPointerDrag } from "../lib/dom";
   import { app, cssZoom, refOf } from "../lib/store.svelte";
-  import { age, buildResourceMeter, clearMeasureTextCache, compareCells, measureTextWidth, toneFor, type ResourceMeter } from "../lib/format";
+  import {
+    age,
+    buildResourceMeter,
+    clearMeasureTextCache,
+    compareCells,
+    formatCPUMilli,
+    formatMemoryBytes,
+    measureTextWidth,
+    toneFor,
+    type ResourceMeter,
+  } from "../lib/format";
   import { kindKey, resourceKey } from "../lib/resources";
   import { unreadyWorkloadCells, workloadColumnIndices } from "../lib/specs";
   import RowContextMenu, { buildRowMenuItems } from "./RowContextMenu.svelte";
@@ -153,14 +163,17 @@
     fontGen;
     if (!isPod) return { cpu: 0, memory: 0 };
     const font = '12px "Google Sans Flex", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    let cpu = 0;
-    let memory = 0;
+    const cpuTexts = new Set<string>();
+    const memTexts = new Set<string>();
     for (const r of rows.values()) {
-      const ct = podMeterFor(r, "cpu").usedText;
-      const mt = podMeterFor(r, "memory").usedText;
-      cpu = Math.max(cpu, measureTextWidth(ct, font, true));
-      memory = Math.max(memory, measureTextWidth(mt, font, true));
+      const u = podUsageFor(r);
+      cpuTexts.add(u ? formatCPUMilli(u.cpuMilli) : "—");
+      memTexts.add(u ? formatMemoryBytes(u.memoryBytes) : "—");
     }
+    let cpu = 0;
+    for (const ct of cpuTexts) cpu = Math.max(cpu, measureTextWidth(ct, font, true));
+    let memory = 0;
+    for (const mt of memTexts) memory = Math.max(memory, measureTextWidth(mt, font, true));
     return { cpu, memory };
   });
 
