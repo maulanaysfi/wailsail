@@ -128,7 +128,8 @@ class AppState {
   #lastReplyAt = 0;
   #unansweredSince = 0;
   #probing = false;
-  #hydrating = false;
+  #hydrateSeq = 0;
+  #activeHydrateSeq = 0;
   #ticks = 0;
   #saveChain = Promise.resolve();
   #savePending = false;
@@ -174,6 +175,7 @@ class AppState {
     name: string,
     opts?: { preserveResourceKey?: string; preserveSelection?: Selection | null; preserveTabs?: boolean },
   ) {
+    const seq = ++this.#hydrateSeq;
     const wantResKey = opts?.preserveResourceKey ?? (this.current ? resourceKey(this.current) : "");
     const wantSelection = opts?.preserveSelection !== undefined ? opts.preserveSelection : (this.context === name ? this.selection : null);
 
@@ -197,7 +199,9 @@ class AppState {
     if (saved !== undefined) {
       this.namespace = saved;
     } else {
-      this.namespace = (await Kube.DefaultNamespace(name).catch(() => "")) ?? "";
+      const defNs = (await Kube.DefaultNamespace(name).catch(() => "")) ?? "";
+      if (seq !== this.#hydrateSeq || this.context !== name) return;
+      this.namespace = defNs;
     }
 
     this.resourcesLoading = true;
@@ -205,26 +209,25 @@ class AppState {
     this.#lastReplyAt = 0;
     this.#refreshClusterStatus();
     try {
-      await this.#hydrateContext(name, wantResKey, wantSelection);
+      await this.#hydrateContext(name, wantResKey, wantSelection, seq);
     } catch (e) {
-      if (this.context === name) {
+      if (seq === this.#hydrateSeq && this.context === name) {
         this.#setConnectionError(`Could not connect to ${name || "kubeconfig"}: ${errorMessage(e)}`);
       }
     } finally {
-      if (this.context === name) {
+      if (seq === this.#hydrateSeq && this.context === name) {
         this.resourcesLoading = false;
         this.#refreshClusterStatus();
       }
     }
   }
 
-  async #hydrateContext(name: string, wantResKey: string, wantSelection: Selection | null) {
-    if (this.#hydrating) return;
-    this.#hydrating = true;
+  async #hydrateContext(name: string, wantResKey: string, wantSelection: Selection | null, seq = ++this.#hydrateSeq) {
+    this.#activeHydrateSeq = seq;
     try {
       if (!this.namespace && !(this.settings.lastNamespace && name in this.settings.lastNamespace)) {
         const defNs = (await Kube.DefaultNamespace(name).catch(() => "")) ?? "";
-        if (this.context !== name) return;
+        if (seq !== this.#hydrateSeq || this.context !== name) return;
         if (defNs) this.namespace = defNs;
       }
       const [version, resources, namespaces] = await Promise.all([
@@ -232,7 +235,7 @@ class AppState {
         Kube.APIResources(name),
         Kube.Namespaces(name),
       ]);
-      if (this.context !== name) return; // switched meanwhile
+      if (seq !== this.#hydrateSeq || this.context !== name) return; // switched meanwhile
       this.#lastReplyAt = Date.now();
       this.#unansweredSince = 0;
       this.#setConnectionError("");
@@ -249,13 +252,15 @@ class AppState {
         this.#recordNav();
       }
     } finally {
-      this.#hydrating = false;
+      if (this.#activeHydrateSeq === seq) {
+        this.#activeHydrateSeq = 0;
+      }
     }
   }
 
   #probeCluster() {
     const ctx = this.context;
-    if (!ctx || this.#probing || this.resourcesLoading || this.#hydrating) return;
+    if (!ctx || this.#probing || this.resourcesLoading || this.#activeHydrateSeq !== 0) return;
     const wasOffline = this.clusterStatus === "disconnected" || !!this.connectionError;
     const needsHydration = this.resources.length === 0 || !this.current;
     this.#probing = true;
