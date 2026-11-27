@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **Build Assets & Embedded Static Footprint (`build/`, `Taskfile.yml`, `frontend/public/`)**: Removed unused Android, iOS, Docker, and stale macOS/Linux build assets and tasks (`-57` files / ~4.2 MB), subsetted `GoogleSansFlex` to Latin `WOFF2` (`3.8 MB` → `1.1 MB`, preserving variable axes and `tabular-nums`), and resized `frontend/public/icon.png` to a 64×64 favicon (`280 KB` → `7.2 KB`).
+- **Component & Backend Modularization (`DetailDrawer`, `internal/kube/helm*.go`, `internal/logs/aggregate.go`)**: Extracted `HelmReleaseOverview`, `ConfigDataTable`, and `ControlledPodsSection` out of `DetailDrawer.svelte`; split `internal/kube/helm.go` into `helm.go`, `helm_watch.go`, and `helm_render.go`; and refactored `StartWorkload` into a structured `workloadAggregator`.
+- **Codebase Deduplication & Dead Code Cleanup**: Removed unused `tslib` devDependency and dead Go/TypeScript helpers (`ResourceRef.GroupVersion`, `Manager.KubeconfigFiles`, `NewManagerWithRules`, unused `api.ts` type re-exports, `--space-5`); shared Go watch flusher/backoff helpers and `slices.Contains`; and shared frontend `Icon.svelte`, `dom.ts` (`cssZoom`, `startPointerDrag` with `pointercancel` cleanup, `horizontalWheelScroll`), `isPlainObject`, and workload/owner kind sets.
+- **Pod Metrics & Log Viewer Performance (`ResourceTable`, `LogViewer`, `format.ts`)**: Deduplicated CPU/memory text width measurement without full `ResourceMeter` allocations, switched `measureCache` to 2,000-entry oldest-first eviction, memoized `LogViewer` filtered entries outside scroll reactivity, and cached formatted log timestamps.
+- **Expanded Unit Test Coverage (`internal/kube`, `internal/portforward`, `frontend/tests/lib.test.ts`)**: Added tests for `runWatch` `410 Gone` relisting, `portforward.resolveTarget`, and `format.ts`/`resources.ts` helpers.
+
 ### Fixed
 - **Helm Cluster-Scoped Reconciliation (`internal/kube/helm.go`)**: Resolved old manifest objects via `resolveObjectRef` before pruning so cluster-scoped resources (`ClusterRole`, `CRD`, etc.) are not deleted during Helm upgrades or rollbacks.
 - **Helm Uninstall Error Handling (`internal/kube/helm.go`)**: Propagated manifest decode and resource delete errors (ignoring `NotFound` and missing CRD `NoMatchError`) before removing `sh.helm.release.v1` Secrets so failed uninstalls never erase release history.
