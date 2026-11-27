@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { app, cssZoom } from "../lib/store.svelte";
+  import { startPointerDrag } from "../lib/dom";
+  import { app } from "../lib/store.svelte";
   import { abbreviateKind, defaultExpandedGroups, groupResources, resourceKey } from "../lib/resources";
   import { measureTextWidth } from "../lib/format";
   import type { ResourceType } from "../lib/api";
@@ -33,20 +34,17 @@
 
   function startResize(e: PointerEvent) {
     e.preventDefault();
-    const z = cssZoom();
-    const startX = e.clientX;
     const startW = width;
     resizing = true;
-    const move = (ev: PointerEvent) => {
-      width = Math.min(maxWidth, Math.max(MIN_W, Math.round(startW + (ev.clientX - startX) / z)));
-    };
-    const up = () => {
-      resizing = false;
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
+    startPointerDrag(
+      e,
+      (dx) => {
+        width = Math.min(maxWidth, Math.max(MIN_W, Math.round(startW + dx)));
+      },
+      () => {
+        resizing = false;
+      },
+    );
   }
 
   function isCollapsed(name: string): boolean {

@@ -3,12 +3,14 @@ package logs
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	k8sfake "k8s.io/client-go/kubernetes/fake"
 )
 
 func TestPump(t *testing.T) {
@@ -79,5 +81,68 @@ func TestSplitTailLinesAndSelectAggregatedPods(t *testing.T) {
 	}
 	if selected[0].Name != "new-a" || selected[1].Name != "new-b" {
 		t.Fatalf("expected active pods prioritized by name, got %s, %s", selected[0].Name, selected[1].Name)
+	}
+}
+
+func TestStartWorkloadFollowFalseTerminates(t *testing.T) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            "job-pod-1",
+			Namespace:       "prod",
+			UID:             "pod-1",
+			OwnerReferences: []metav1.OwnerReference{{UID: "job-1", Kind: "Job", Name: "migrate"}},
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{Name: "app"}},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodSucceeded,
+			ContainerStatuses: []corev1.ContainerStatus{
+				{Name: "app", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 0}}},
+			},
+		},
+	}
+	typed := k8sfake.NewSimpleClientset(pod)
+	endedCh := make(chan struct{}, 1)
+	var mu sync.Mutex
+	var events []Event
+	svc := NewService(nil, func(_ string, data any) {
+		ev, ok := data.(Event)
+		if !ok {
+			return
+		}
+		mu.Lock()
+		events = append(events, ev)
+		mu.Unlock()
+		if ev.Ended {
+			select {
+			case endedCh <- struct{}{}:
+			default:
+			}
+		}
+	})
+
+	id, err := svc.startWorkloadWithClient(typed, "prod", "Job", "job-1", Options{Follow: false}, "wl-test")
+	if err != nil {
+		t.Fatalf("startWorkloadWithClient failed: %v", err)
+	}
+	defer svc.Stop(id)
+
+	select {
+	case <-endedCh:
+	case <-time.After(3 * time.Second):
+		t.Fatal("expected StartWorkload with Follow=false to emit Ended=true and terminate")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	sawConnected := false
+	for _, ev := range events {
+		if ev.Connected && ev.PodCount == 1 && ev.TotalPods == 1 {
+			sawConnected = true
+		}
+	}
+	if !sawConnected {
+		t.Fatalf("expected Connected event with PodCount=1, got %+v", events)
 	}
 }

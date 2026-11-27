@@ -1,4 +1,4 @@
-import { toneFor } from "./format.ts";
+import { isPlainObject, toneFor } from "./format.ts";
 
 export interface KV {
   label: string;
@@ -55,10 +55,6 @@ const ACRONYM_MAP: Record<string, string> = {
   ebgp: "EBGP",
   mtu: "MTU",
 };
-
-function isPlainObject(v: unknown): v is Record<string, any> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
 
 export function humanizeSegment(raw: string): string {
   const exact = ACRONYM_MAP[raw.toLowerCase()];

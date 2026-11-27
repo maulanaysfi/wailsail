@@ -15,9 +15,9 @@
     <PackageInformation
         PackageName="wailsail"
         PackageDisplayName="wailsail"
-        PublisherName="CN=wailsail"
-        PublisherDisplayName="wailsail"
-        Version="0.3.0.0"
+        PublisherName="CN=Maulana Yusuf"
+        PublisherDisplayName="Maulana Yusuf"
+        Version="0.3.1.0"
         PackageDescription="An original Kubernetes desktop client written in Go with Wails v3">
         <Capabilities>
             <Capability Name="runFullTrust" />
@@ -42,7 +42,7 @@
         <Properties>
             <Framework>false</Framework>
             <DisplayName>wailsail</DisplayName>
-            <PublisherDisplayName>wailsail</PublisherDisplayName>
+            <PublisherDisplayName>Maulana Yusuf</PublisherDisplayName>
             <Description>An original Kubernetes desktop client written in Go with Wails v3</Description>
             <Logo>Assets\AppIcon.png</Logo>
         </Properties>

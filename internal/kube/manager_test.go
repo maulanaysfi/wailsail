@@ -101,8 +101,8 @@ func TestManagerSetKubeconfigPaths(t *testing.T) {
 	if ctxs, _ = m.Contexts(); len(ctxs) != 4 {
 		t.Fatalf("after reset: %v", ctxs)
 	}
-	if files := m.KubeconfigFiles(); len(files) != 4 {
-		t.Fatalf("files %v", files)
+	if len(m.rules.Precedence) != 4 {
+		t.Fatalf("files %v", m.rules.Precedence)
 	}
 
 	// Reset and SetKubeconfigPaths advance generation so in-flight builds

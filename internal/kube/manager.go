@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -47,12 +48,10 @@ type Manager struct {
 
 // NewManager uses the standard loading rules ($KUBECONFIG, then ~/.kube/config).
 func NewManager() *Manager {
-	return NewManagerWithRules(clientcmd.NewDefaultClientConfigLoadingRules())
-}
-
-// NewManagerWithRules allows callers (and tests) to supply explicit loading rules.
-func NewManagerWithRules(rules *clientcmd.ClientConfigLoadingRules) *Manager {
-	return &Manager{rules: rules, clients: map[string]*Clients{}}
+	return &Manager{
+		rules:   clientcmd.NewDefaultClientConfigLoadingRules(),
+		clients: map[string]*Clients{},
+	}
 }
 
 // SetKubeconfigPaths configures the kubeconfig files and/or directories to
@@ -68,16 +67,6 @@ func (m *Manager) SetKubeconfigPaths(paths []string) {
 	m.rebuildRulesLocked()
 	m.gen++
 	m.clients = map[string]*Clients{}
-}
-
-// KubeconfigFiles returns the resolved kubeconfig files currently in use.
-func (m *Manager) KubeconfigFiles() []string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.rules.ExplicitPath != "" {
-		return []string{m.rules.ExplicitPath}
-	}
-	return append([]string(nil), m.rules.Precedence...)
 }
 
 func (m *Manager) rebuildRulesLocked() {
@@ -174,14 +163,7 @@ func appendUnique(list []string, items ...string) []string {
 		if it == "" {
 			continue
 		}
-		dup := false
-		for _, have := range list {
-			if have == it {
-				dup = true
-				break
-			}
-		}
-		if !dup {
+		if !slices.Contains(list, it) {
 			list = append(list, it)
 		}
 	}

@@ -1,7 +1,7 @@
 /* Google Sans Flex (SIL OFL 1.1, see /fonts/OFL.txt), bundled for offline use. */
 @font-face {
   font-family: "Google Sans Flex";
-  src: url("/fonts/GoogleSansFlex.ttf") format("truetype");
+  src: url("/fonts/GoogleSansFlex.woff2") format("woff2");
   font-weight: 100 1000;
   font-stretch: 25% 151%;
   font-style: oblique 0deg 10deg;
@@ -14,7 +14,6 @@
   --space-2: 8px;
   --space-3: 16px;
   --space-4: 24px;
-  --space-5: 32px;
   --space-6: 40px;
   --radius: 4px;
   --radius-lg: 8px;

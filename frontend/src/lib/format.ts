@@ -1,3 +1,5 @@
+import { cssZoom } from "./dom.ts";
+
 /** Compact age like "45s", "12m", "3h", "5d", "2y". */
 export function age(created: string, now: number): string {
   if (!created) return "";
@@ -213,7 +215,7 @@ export function buildResourceMeter(
 let measureCtx: CanvasRenderingContext2D | null | undefined;
 let measureSpan: HTMLSpanElement | null | undefined;
 const measureCache = new Map<string, number>();
-const MAX_MEASURE_CACHE = 500;
+const MAX_MEASURE_CACHE = 2000;
 
 /** Clear cached text measurements (e.g. once web fonts finish loading). */
 export function clearMeasureTextCache(): void {
@@ -239,9 +241,7 @@ export function measureTextWidth(text: string, font: string, tabular = false): n
     // Set after `style.font` because the CSS `font` shorthand resets font-variant-numeric.
     measureSpan.style.fontVariantNumeric = "tabular-nums";
     measureSpan.textContent = text;
-    const rawZoom = parseFloat(document.documentElement.style.zoom || "");
-    const zoom = Number.isFinite(rawZoom) && rawZoom > 0 ? rawZoom : 1;
-    width = Math.ceil(measureSpan.getBoundingClientRect().width / zoom);
+    width = Math.ceil(measureSpan.getBoundingClientRect().width / cssZoom());
   } else {
     if (measureCtx === undefined && typeof document !== "undefined") {
       measureCtx = document.createElement("canvas").getContext("2d");
@@ -253,7 +253,10 @@ export function measureTextWidth(text: string, font: string, tabular = false): n
       width = text.length * 8;
     }
   }
-  if (measureCache.size >= MAX_MEASURE_CACHE) measureCache.clear();
+  if (measureCache.size >= MAX_MEASURE_CACHE) {
+    const oldest = measureCache.keys().next().value;
+    if (oldest !== undefined) measureCache.delete(oldest);
+  }
   measureCache.set(key, width);
   return width;
 }
@@ -378,27 +381,42 @@ function getLogTimeFormatter(timeZone: string | undefined): Intl.DateTimeFormat 
   return fmt;
 }
 
+const logTimestampCache = new Map<string, string>();
+const MAX_LOG_TS_CACHE = 2000;
+
 /**
  * Format a parsed Kubernetes log timestamp (`2026-...Z `) in the configured
  * timezone ("local", "UTC", or IANA zone) as `YYYY-MM-DD HH:mm:ss` while
  * preserving trailing separator whitespace.
  */
 export function formatLogTimestamp(rawTs: string, timezone = "local"): string {
+  const tzKey = !timezone || timezone === "local" ? "" : timezone;
+  const cacheKey = `${tzKey}\0${rawTs}`;
+  const cached = logTimestampCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
   const m = /^(\S+)(\s*)$/.exec(rawTs);
   if (!m) return rawTs;
   const ms = Date.parse(m[1]);
   if (Number.isNaN(ms)) return rawTs;
-  const tz = !timezone || timezone === "local" ? undefined : timezone;
+  const tz = tzKey || undefined;
+  let out = rawTs;
   try {
     const parts: Record<string, string> = {};
     for (const p of getLogTimeFormatter(tz).formatToParts(ms)) {
       if (p.type !== "literal") parts[p.type] = p.value;
     }
     const hour = parts.hour === "24" ? "00" : parts.hour;
-    return `${parts.year}-${parts.month}-${parts.day} ${hour}:${parts.minute}:${parts.second}${m[2]}`;
+    out = `${parts.year}-${parts.month}-${parts.day} ${hour}:${parts.minute}:${parts.second}${m[2]}`;
   } catch {
-    return rawTs;
+    out = rawTs;
   }
+  if (logTimestampCache.size >= MAX_LOG_TS_CACHE) {
+    const oldest = logTimestampCache.keys().next().value;
+    if (oldest !== undefined) logTimestampCache.delete(oldest);
+  }
+  logTimestampCache.set(cacheKey, out);
+  return out;
 }
 
 /** Return selectable timezone options: Local (System), UTC, and supported IANA zones. */

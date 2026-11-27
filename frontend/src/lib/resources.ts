@@ -158,6 +158,15 @@ export function groupResources(all: ResourceType[]): ResourceGroup[] {
 
 export const scalableKinds = new Set(["apps/Deployment", "apps/StatefulSet", "apps/ReplicaSet"]);
 export const restartableKinds = new Set(["apps/Deployment", "apps/StatefulSet", "apps/DaemonSet"]);
+export const ownerJumpKinds = new Set(["/Pod", "apps/ReplicaSet", "batch/Job"]);
+export const workloadLogKinds = new Set([
+  "apps/Deployment",
+  "apps/ReplicaSet",
+  "apps/StatefulSet",
+  "apps/DaemonSet",
+  "batch/Job",
+  "batch/CronJob",
+]);
 
 const kindAbbreviations: Record<string, string> = {
   CustomResourceDefinition: "CRD",
