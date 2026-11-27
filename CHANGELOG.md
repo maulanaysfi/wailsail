@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
-- **Version Bump Script (`version`, `scripts/bump-version.sh`)**: Stored the canonical version in `version` and added `scripts/bump-version.sh` to update all frontend and desktop packaging version placeholders in one command.
+- **Version Bump Script (`scripts/version`, `scripts/bump-version.sh`)**: Stored the canonical version in `scripts/version` and added `scripts/bump-version.sh` to update all frontend and desktop packaging version placeholders in one command.
 
 ### Changed
 - **Author, Publisher, Maintainer & Copyright Metadata (`LICENSE`, `build/`)**: Updated author, publisher, maintainer, vendor, and copyright fields across `LICENSE` and desktop packaging metadata to `Maulana Yusuf`, and updated `frontend/.npmrc` to `min-release-age=7`.

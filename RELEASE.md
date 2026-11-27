@@ -10,7 +10,7 @@ Update every file below before tagging a release. Note that Windows manifests an
 
 | File | Field / Line | Format Example | Notes |
 |---|---|---|---|
-| [version](version) | Single line | `0.1.2-beta` | Canonical source version read by `scripts/bump-version.sh` |
+| [scripts/version](scripts/version) | Single line | `0.1.2-beta` | Canonical source version read by `scripts/bump-version.sh` |
 | [frontend/src/lib/store.svelte.ts](frontend/src/lib/store.svelte.ts) | `APP_VERSION` | `"v0.1.2 (beta)"` | Shown as a pill in `SettingsModal` |
 | [build/config.yml](build/config.yml) | `info.version` | `"0.1.2-beta"` | Wails v3 project config |
 | [build/linux/nfpm/nfpm.yaml](build/linux/nfpm/nfpm.yaml) | `version` | `"0.1.2-beta"` | Linux `.deb` / `.rpm` / `.apk` package version |
@@ -31,7 +31,7 @@ Update every file below before tagging a release. Note that Windows manifests an
 
 ## 2. Release Checklist
 
-1. **Bump all version placeholders** (reads current version from `version` and updates all files in Section 1):
+1. **Bump all version placeholders** (reads current version from `scripts/version` and updates all files in Section 1):
    ```bash
    ./scripts/bump-version.sh X.Y.Z-beta
    ```
@@ -56,7 +56,7 @@ Update every file below before tagging a release. Note that Windows manifests an
      ```
 5. **Commit & tag**:
    ```bash
-   git add frontend/src/lib/store.svelte.ts build/ CHANGELOG.md
+   git add scripts/version frontend/src/lib/store.svelte.ts build/ CHANGELOG.md
    git commit -m "chore(release): bump version to vX.Y.Z-beta"
    git tag -a vX.Y.Z-beta -m "Release vX.Y.Z-beta"
    ```

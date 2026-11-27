@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# Bump all wailsail version placeholders from the value stored in ./version.
+# Bump all wailsail version placeholders from the value stored in scripts/version.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-VERSION_FILE="version"
+VERSION_FILE="scripts/version"
 
 usage() {
   cat <<'EOF'
 Usage: scripts/bump-version.sh <new-version>
 
-Reads the current version from ./version (e.g. 0.3.0-beta), updates every
+Reads the current version from scripts/version (e.g. 0.3.0-beta), updates every
 version placeholder across frontend/ and build/, and writes the new version
-back to ./version.
+back to scripts/version.
 
 Examples:
   ./scripts/bump-version.sh 0.3.1-beta
