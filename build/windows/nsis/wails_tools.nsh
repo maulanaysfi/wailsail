@@ -8,7 +8,7 @@
     !define INFO_PROJECTNAME "wailsail"
 !endif
 !ifndef INFO_COMPANYNAME
-    !define INFO_COMPANYNAME "wailsail"
+    !define INFO_COMPANYNAME "Maulana Yusuf"
 !endif
 !ifndef INFO_PRODUCTNAME
     !define INFO_PRODUCTNAME "wailsail"
@@ -17,7 +17,7 @@
     !define INFO_PRODUCTVERSION "0.3.0"
 !endif
 !ifndef INFO_COPYRIGHT
-    !define INFO_COPYRIGHT "(c) 2026, wailsail"
+    !define INFO_COPYRIGHT "(c) 2026, Maulana Yusuf"
 !endif
 !ifndef PRODUCT_EXECUTABLE
     !define PRODUCT_EXECUTABLE "${INFO_PROJECTNAME}.exe"

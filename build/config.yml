@@ -5,11 +5,11 @@ version: '3'
 
 # This information is used to generate the build assets.
 info:
-  companyName: "wailsail" # The name of the company
+  companyName: "Maulana Yusuf" # The name of the company
   productName: "wailsail" # The name of the application
   productIdentifier: "dev.wailsail.app" # The unique product identifier
   description: "An original Kubernetes desktop client written in Go with Wails v3" # The application description
-  copyright: "(c) 2026, wailsail" # Copyright text
+  copyright: "(c) 2026, Maulana Yusuf" # Copyright text
   comments: "Sail as far as you can, Captain! These nodes are in your control!" # Comments
   version: "0.3.0-beta" # The application version
   # cfBundleIconName: "appicon" # The macOS icon name in Assets.car icon bundles (optional)

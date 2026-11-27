@@ -5,9 +5,9 @@
 	"info": {
 		"0409": {
 			"ProductVersion": "0.3.0-beta",
-			"CompanyName": "wailsail",
+			"CompanyName": "Maulana Yusuf",
 			"FileDescription": "An original Kubernetes desktop client written in Go with Wails v3",
-			"LegalCopyright": "(c) 2026, wailsail",
+			"LegalCopyright": "(c) 2026, Maulana Yusuf",
 			"ProductName": "wailsail",
 			"Comments": "Sail as far as you can, Captain! These nodes are in your control!"
 		}
