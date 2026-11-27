@@ -14,6 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/kubernetes"
 )
 
 // MaxAggregatedPods caps concurrent Pod streams per aggregated workload log tab.
@@ -70,6 +71,15 @@ func containerReadyForLogs(p *corev1.Pod, container string) bool {
 	return p.Status.Phase == corev1.PodSucceeded || p.Status.Phase == corev1.PodFailed
 }
 
+func containerRunning(p *corev1.Pod, container string) bool {
+	for _, cs := range p.Status.ContainerStatuses {
+		if cs.Name == container {
+			return cs.State.Running != nil
+		}
+	}
+	return false
+}
+
 // StartWorkload aggregates logs across all main containers of Pods owned by a
 // workload (Deployment, ReplicaSet, StatefulSet, DaemonSet, Job, CronJob),
 // capping active Pod streams at MaxAggregatedPods and following new rollout Pods.
@@ -78,6 +88,10 @@ func (s *Service) StartWorkload(contextName, namespace, kind, uid, name string, 
 	if err != nil {
 		return "", err
 	}
+	return s.startWorkloadWithClient(c.Typed, namespace, kind, uid, opts, streamID)
+}
+
+func (s *Service) startWorkloadWithClient(typed kubernetes.Interface, namespace, kind, uid string, opts Options, streamID string) (string, error) {
 	switch kind {
 	case "Deployment", "ReplicaSet", "StatefulSet", "DaemonSet", "Job", "CronJob":
 	default:
@@ -156,7 +170,8 @@ func (s *Service) StartWorkload(contextName, namespace, kind, uid, name string, 
 			return map[types.UID]struct{}{types.UID(uid): {}}
 		}
 
-		reconcileLocked := func() {
+		var reconcileLocked func()
+		reconcileLocked = func() {
 			if !podsReady || !childDone || ctx.Err() != nil {
 				return
 			}
@@ -193,8 +208,13 @@ func (s *Service) StartWorkload(contextName, namespace, kind, uid, name string, 
 			}
 
 			for k, p := range desired {
-				if _, exists := streams[k]; exists {
-					continue
+				if cur, exists := streams[k]; exists {
+					// Reconnect an ended stream if the container is running again while following.
+					if !(opts.Follow && cur.ended && containerRunning(&p, k.container)) {
+						continue
+					}
+					cur.cancel()
+					delete(streams, k)
 				}
 				if !containerReadyForLogs(&p, k.container) {
 					continue
@@ -209,7 +229,7 @@ func (s *Service) StartWorkload(contextName, namespace, kind, uid, name string, 
 				}
 
 				wg.Add(1)
-				go func(key streamKey, tailLines int64, stRef *activeStream, subCtx context.Context) {
+				go func(key streamKey, podUID types.UID, tailLines int64, stRef *activeStream, subCtx context.Context) {
 					defer wg.Done()
 					plo := &corev1.PodLogOptions{
 						Container:  key.container,
@@ -220,7 +240,7 @@ func (s *Service) StartWorkload(contextName, namespace, kind, uid, name string, 
 						t := tailLines
 						plo.TailLines = &t
 					}
-					rc, err := c.Typed.CoreV1().Pods(namespace).GetLogs(key.pod, plo).Stream(subCtx)
+					rc, err := typed.CoreV1().Pods(namespace).GetLogs(key.pod, plo).Stream(subCtx)
 					if err != nil {
 						mu.Lock()
 						if cur, ok := streams[key]; ok && cur == stRef && subCtx.Err() == nil {
@@ -237,8 +257,23 @@ func (s *Service) StartWorkload(contextName, namespace, kind, uid, name string, 
 					if cur, ok := streams[key]; ok && cur == stRef {
 						cur.ended = true
 					}
+					curPod := podsByUID[podUID]
+					shouldRetry := opts.Follow && subCtx.Err() == nil && curPod != nil && containerRunning(curPod, key.container)
 					mu.Unlock()
-				}(k, tail, st, sCtx)
+					if shouldRetry {
+						select {
+						case <-subCtx.Done():
+							return
+						case <-time.After(2 * time.Second):
+						}
+						mu.Lock()
+						if cur, ok := streams[key]; ok && cur == stRef {
+							delete(streams, key)
+							reconcileLocked()
+						}
+						mu.Unlock()
+					}
+				}(k, p.UID, tail, st, sCtx)
 			}
 		}
 
@@ -264,6 +299,9 @@ func (s *Service) StartWorkload(contextName, namespace, kind, uid, name string, 
 							return
 						}
 						s.emit(topic, Event{Error: fmt.Sprintf("watch %s: %v", name, err)})
+						if !opts.Follow {
+							return
+						}
 						if !sleep() {
 							return
 						}
@@ -272,6 +310,9 @@ func (s *Service) StartWorkload(contextName, namespace, kind, uid, name string, 
 					rv = newRV
 					backoff = time.Second
 					onListDone()
+					if !opts.Follow {
+						return
+					}
 				}
 				w, err := watchFn(ctx, rv)
 				if err != nil {
@@ -329,7 +370,7 @@ func (s *Service) StartWorkload(contextName, namespace, kind, uid, name string, 
 				watchLoop(
 					"replicasets",
 					func(wctx context.Context) (string, error) {
-						list, err := c.Typed.AppsV1().ReplicaSets(namespace).List(wctx, metav1.ListOptions{})
+						list, err := typed.AppsV1().ReplicaSets(namespace).List(wctx, metav1.ListOptions{})
 						if err != nil {
 							return "", err
 						}
@@ -346,7 +387,7 @@ func (s *Service) StartWorkload(contextName, namespace, kind, uid, name string, 
 					},
 					func(wctx context.Context, rv string) (watch.Interface, error) {
 						t := int64(300)
-						return c.Typed.AppsV1().ReplicaSets(namespace).Watch(wctx, metav1.ListOptions{
+						return typed.AppsV1().ReplicaSets(namespace).Watch(wctx, metav1.ListOptions{
 							ResourceVersion:     rv,
 							AllowWatchBookmarks: true,
 							TimeoutSeconds:      &t,
@@ -381,7 +422,7 @@ func (s *Service) StartWorkload(contextName, namespace, kind, uid, name string, 
 				watchLoop(
 					"jobs",
 					func(wctx context.Context) (string, error) {
-						list, err := c.Typed.BatchV1().Jobs(namespace).List(wctx, metav1.ListOptions{})
+						list, err := typed.BatchV1().Jobs(namespace).List(wctx, metav1.ListOptions{})
 						if err != nil {
 							return "", err
 						}
@@ -398,7 +439,7 @@ func (s *Service) StartWorkload(contextName, namespace, kind, uid, name string, 
 					},
 					func(wctx context.Context, rv string) (watch.Interface, error) {
 						t := int64(300)
-						return c.Typed.BatchV1().Jobs(namespace).Watch(wctx, metav1.ListOptions{
+						return typed.BatchV1().Jobs(namespace).Watch(wctx, metav1.ListOptions{
 							ResourceVersion:     rv,
 							AllowWatchBookmarks: true,
 							TimeoutSeconds:      &t,
@@ -434,7 +475,7 @@ func (s *Service) StartWorkload(contextName, namespace, kind, uid, name string, 
 			watchLoop(
 				"pods",
 				func(wctx context.Context) (string, error) {
-					list, err := c.Typed.CoreV1().Pods(namespace).List(wctx, metav1.ListOptions{})
+					list, err := typed.CoreV1().Pods(namespace).List(wctx, metav1.ListOptions{})
 					if err != nil {
 						return "", err
 					}
@@ -449,7 +490,7 @@ func (s *Service) StartWorkload(contextName, namespace, kind, uid, name string, 
 				},
 				func(wctx context.Context, rv string) (watch.Interface, error) {
 					t := int64(300)
-					return c.Typed.CoreV1().Pods(namespace).Watch(wctx, metav1.ListOptions{
+					return typed.CoreV1().Pods(namespace).Watch(wctx, metav1.ListOptions{
 						ResourceVersion:     rv,
 						AllowWatchBookmarks: true,
 						TimeoutSeconds:      &t,
