@@ -270,14 +270,25 @@ func helmReleaseRow(rel *helmRelease, fallbackNS string) Row {
 	}
 }
 
-// helmTracker maintains all decoded revisions per secret and projects the
-// latest revision per (namespace, releaseName) into table rows.
+// helmSummary holds only the lightweight table row metadata for one release
+// revision so full charts, templates, and manifests are never retained in RAM.
+type helmSummary struct {
+	version int
+	row     Row
+}
+
+// helmTracker maintains lightweight revision summaries per secret and projects
+// the latest revision per (namespace, releaseName) into table rows.
 type helmTracker struct {
-	bySecret map[string]*helmRelease // key: secretNamespace + "/" + secretName
+	byRelease       map[string]map[string]helmSummary // releaseKey -> secretKey -> summary
+	secretToRelease map[string]string                 // secretKey -> releaseKey
 }
 
 func newHelmTracker() *helmTracker {
-	return &helmTracker{bySecret: map[string]*helmRelease{}}
+	return &helmTracker{
+		byRelease:       map[string]map[string]helmSummary{},
+		secretToRelease: map[string]string{},
+	}
 }
 
 func (h *helmTracker) putSecret(sec *corev1.Secret) (releaseKey string, ok bool) {
@@ -289,54 +300,66 @@ func (h *helmTracker) putSecret(sec *corev1.Secret) (releaseKey string, ok bool)
 	if err != nil || rel.Name == "" {
 		return "", false
 	}
-	if rel.Namespace == "" {
-		rel.Namespace = sec.Namespace
-	}
+	row := helmReleaseRow(rel, sec.Namespace)
+	rKey := row.Key
 	sKey := sec.Namespace + "/" + sec.Name
-	h.bySecret[sKey] = rel
-	return rel.Namespace + "/" + rel.Name, true
+	if prevKey, existed := h.secretToRelease[sKey]; existed && prevKey != rKey {
+		if revs := h.byRelease[prevKey]; revs != nil {
+			delete(revs, sKey)
+			if len(revs) == 0 {
+				delete(h.byRelease, prevKey)
+			}
+		}
+	}
+	if h.byRelease[rKey] == nil {
+		h.byRelease[rKey] = map[string]helmSummary{}
+	}
+	h.byRelease[rKey][sKey] = helmSummary{version: rel.Version, row: row}
+	h.secretToRelease[sKey] = rKey
+	return rKey, true
 }
 
 func (h *helmTracker) deleteSecret(sec *corev1.Secret) (releaseKey string, ok bool) {
 	sKey := sec.Namespace + "/" + sec.Name
-	prev, exists := h.bySecret[sKey]
+	rKey, exists := h.secretToRelease[sKey]
 	if !exists {
 		if name := sec.Labels["name"]; name != "" {
 			return sec.Namespace + "/" + name, true
 		}
 		return "", false
 	}
-	delete(h.bySecret, sKey)
-	return prev.Namespace + "/" + prev.Name, true
+	delete(h.secretToRelease, sKey)
+	if revs := h.byRelease[rKey]; revs != nil {
+		delete(revs, sKey)
+		if len(revs) == 0 {
+			delete(h.byRelease, rKey)
+		}
+	}
+	return rKey, true
 }
 
 func (h *helmTracker) latestRow(releaseKey string) (Row, bool) {
-	var best *helmRelease
-	for _, rel := range h.bySecret {
-		if rel.Namespace+"/"+rel.Name != releaseKey {
-			continue
-		}
-		if best == nil || rel.Version > best.Version {
-			best = rel
-		}
-	}
-	if best == nil {
+	revs := h.byRelease[releaseKey]
+	if len(revs) == 0 {
 		return Row{}, false
 	}
-	return helmReleaseRow(best, best.Namespace), true
+	var best helmSummary
+	first := true
+	for _, s := range revs {
+		if first || s.version > best.version {
+			best = s
+			first = false
+		}
+	}
+	return best.row, true
 }
 
 func (h *helmTracker) allLatestRows() []Row {
-	latest := map[string]*helmRelease{}
-	for _, rel := range h.bySecret {
-		k := rel.Namespace + "/" + rel.Name
-		if cur, ok := latest[k]; !ok || rel.Version > cur.Version {
-			latest[k] = rel
+	rows := make([]Row, 0, len(h.byRelease))
+	for rKey := range h.byRelease {
+		if row, ok := h.latestRow(rKey); ok {
+			rows = append(rows, row)
 		}
-	}
-	rows := make([]Row, 0, len(latest))
-	for _, rel := range latest {
-		rows = append(rows, helmReleaseRow(rel, rel.Namespace))
 	}
 	sort.Slice(rows, func(i, j int) bool {
 		if rows[i].Namespace != rows[j].Namespace {
